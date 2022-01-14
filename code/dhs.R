@@ -53,7 +53,23 @@ dta <- o %>%
     )
 
 #' cleaning
+#' # Data cleaning
+#'
+#' Remove those
+#'
+#' - afs or marriage age greater than age
+#' - married but no afs
+
 dta %<>% filter(!(afs > age | marriage_age > age))
+dta %<>% filter(!(marital_status != 0 & afs == 0))
+# dta %<>% filter(afs <= marriage_age)
+dta <- dta |>
+    mutate(across(c(marital_status, n_union), as_factor)) %>%
+    mutate(marital_status = fct_recode(
+        marital_status,
+        separated = "no longer living together/separated",
+        union = "living with partner"
+    ))
 
 dta$marriage_age %>% table(useNA = "a")
 dta$afs %>% table(useNA = "a")
