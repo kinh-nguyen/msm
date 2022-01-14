@@ -107,12 +107,52 @@ dta %>%
     adorn_ns("front") %>%
     kable(caption = "Percent colwise")
 
-#' married but no afs
-dta %<>% filter(!(marital_status != 0 & afs == 0))
+#' ## Union - time since sexual debut to first union
+#'
+#' ### Delay sexual intercourse in child marriage
+#' 
+dta %<>%
+    mutate(
+        time_since_debut_c = marriage_age2 - afs,
+        marriage_age_d = findInterval2(marriage_age2, seq(15, 30, 5)),
+        afs_d = findInterval2(afs, seq(15, 30, 5)),
+        time_since_debut_d = findInterval2(time_since_debut_c, c(-2, -1, 0, 1, 2, 5, 10)), 
+        time_since_debut_d = fct_recode(time_since_debut_d, '<-3'='-12--3')
+    )
+#' Very young age of marriage has larger proportion of having *sexual debut
+#' after marriage* (\@ref(fig:time_since_db_fig)), up to 50% in those married
+#' under 14 (\@ref(tab:time_since_db_tb)). This period is mostly in a year or
+#' two; three or more years delay of sexual intercourse after marriage is
+#' visible only in those married at age under 14. We might assume the delay is
+#' correctly reported.
+#'
+#' This implies risk of STDs transmission in very young age should not be
+#' inferred based on married status but AFS. Also, this group is already in a
+#' stable relationship. These suggest excluding this group from the analyses of
+#' union formation is reasonable and standard survival model can be used.
+#'
+#+ time_since_db_fig, fig.cap="Time since debut to married by age of marriage"
+dta %>%
+    group_by(time_since_debut_d, marriage_age_d) %>%
+    count() %>%
+    filter(marriage_age_d != "NA-NA") %>%
+    ggplot() +
+    geom_col(aes(marriage_age_d, n, fill = time_since_debut_d), position = position_fill()) +
+    theme(axis.text.x = element_text(angle = 30)) +
+    scale_fill_manual(values = ktools::gen_colors(okabe, 8)) +
+    labs(x = "Age at marriage", title = "Time since AFS to first union")
 
-#' cleaning
-#' todo let assume aam >= afs for now
-# dta %<>% filter(afs <= marriage_age)
+#+ fig.cap="Time since debut to married by age of marriage - filtered"
+dta %>%
+    filter(time_since_debut_c >= 0) %>%
+    group_by(time_since_debut_d, marriage_age_d) %>%
+    count() %>%
+    filter(marriage_age_d != "NA-NA") %>%
+    ggplot() +
+    geom_col(aes(marriage_age_d, n, fill = time_since_debut_d), position = position_fill()) +
+    theme(axis.text.x = element_text(angle = 30)) +
+    scale_fill_manual(values = ktools::gen_colors(okabe, 8)) +
+    labs(x = "Age at marriage", title="Time since AFS to first union - exclude delay sex group")
 
 #' states indicators
 dta %>%
