@@ -52,7 +52,20 @@ dta <- o %>%
         age = svy - yob, sex = datasets$sex[x]
     )
 
-#' cleaning
+#' # Abstract {-}
+#'
+#' We could model 
+#'
+#' - union prospect with starting time is AFS: 
+#'   - standard survival model which allow right-censored for those sexually
+#'     debuted but never in a union can be used 
+#'   - large number of child marriage had sexual intercourse delay after
+#'     marriage -- to exclude from this analysis
+#' - risk of dissolution with starting time is union date
+#'   - 1 union: a competing risk model with right-censored data
+#'   - more than 1 unions: how to deal with left-censoring of both time and type of
+#'     event? weighting with events probability is possibly helpful.
+#'
 #' # Data cleaning
 #'
 #' Remove those
