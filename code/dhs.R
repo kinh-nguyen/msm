@@ -1,4 +1,20 @@
-#' Pull with `rdhs`
+#' ---
+#' title: "Married, divorce, widowed in women - Malawi 2015"
+#' bibliography: "../zotero_biblatex.bib"
+#' output:
+#'   pdf_document:
+#'     toc: true
+#'     number_sections: true
+#'     keep_tex: false
+#'     include:
+#'       in_header: "~/templates/floatHforRmarkdown.tex"
+#' documentclass: article
+#' linkcolor: blue
+#' urlcolor: blue
+#' citecolor: red
+#' ---
+#'
+
 library(rdhs)
 library(tidyverse)
 library(ktools)
