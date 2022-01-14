@@ -15,19 +15,26 @@
 #' ---
 #'
 
+#+ packages and config, include=FALSE
 library(rdhs)
 library(tidyverse)
-library(ktools)
-set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
-#' get one sex one country first
-datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
-    filter(SurveyYear == 2015)  %>%
-    mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
-datasets
-downloads <- get_datasets(datasets$FileName)
-names(downloads)
+library(ggplot2)
+library(ggfortify)
+library(janitor)
+tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
+devtools::load_all("~/Code/R/ktools/")
+library(knitr)
+opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
 
-#' Extract 
+# Pull with `rdhs`
+# set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
+# datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
+#     filter(SurveyYear == 2015)  %>%
+#     mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
+# datasets
+# downloads <- get_datasets(datasets$FileName)
+# names(downloads)
+
 x <- 1 # adapt from multiple datasets
 o <- readRDS(downloads[[x]]) %>%
     as_tibble() %>%
