@@ -33,14 +33,20 @@ o <- readRDS(downloads[[x]]) %>%
     as_tibble() %>%
     mutate(lab = datasets$SurveyId[x])
 
+# Extract and converting date time 
 dta <- o %>%
     select(
         psu = v021, strata = v023, weights = v005, dob = v011, doi = v008, afs = v531, lab,
         marriage_age = v511,
+        n_union = v503,
+        month_1st_union = v507,
+        year_1st_union = v508,
+        cmc_uninon = v509,
         marital_status = v501
     ) %>%
     mutate(
         marriage_age =  if_else(is.na(marriage_age), 0L, marriage_age),
+        marriage_age2 = (cmc_uninon - dob) / 12,
         iso = substr(lab, 1, 2),
         yob = cmc_to_year(dob), svy = cmc_to_year(doi),
         age = svy - yob, sex = datasets$sex[x]
