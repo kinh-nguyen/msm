@@ -154,10 +154,23 @@ dta %>%
     scale_fill_manual(values = ktools::gen_colors(okabe, 8)) +
     labs(x = "Age at marriage", title="Time since AFS to first union - exclude delay sex group")
 
-#' states indicators
+#' ### Late sexual debut - short time to marriage
+#' 
+#' Plot time since debut by AFS shows late sexual debut shorten the time to
+#' marriage. Might need to include this in the model as covariate.
+#'
+#+ fig.cap="Time since debut to married by age at first sex"
 dta %>%
-    pull(marital_status) %>%
-    table(useNA = "a")
+    filter(time_since_debut_c >= 0) %>%
+    filter(afs != 0) %>%
+    group_by(time_since_debut_d, afs_d) %>%
+    count() %>%
+    filter(time_since_debut_d != "NA-NA") %>%
+    ggplot() +
+    geom_col(aes(afs_d, n, fill = time_since_debut_d), position = position_fill()) +
+    theme(axis.text.x = element_text(angle = 30)) +
+    scale_fill_manual(values = ktools::gen_colors(okabe, 9)) +
+    labs(x = "Age at first sex", title = "Time since AFS to first union")
 
 dta %<>%
     rownames_to_column("id") %>%
