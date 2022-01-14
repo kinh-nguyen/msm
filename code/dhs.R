@@ -71,18 +71,41 @@ dta <- dta |>
         union = "living with partner"
     ))
 
-dta$marriage_age %>% table(useNA = "a")
-dta$afs %>% table(useNA = "a")
+#' # Descriptive statistics
+#'
+#' ## Key variables
+#'
+#' All married individuals responded to number of union question. Among those
+#' with more than once unions, more than 19% had more than one union in any of
+#' the marital statuses. The following differences are needed to be considered
+#' when modelling:
+#'
+#' - The number of currently married with more than one unions reflects
+#'   *partially* the number of remarried. Because remarried can also be
+#'   currently in other states, including living with partner, widowed,
+#'   divorced, and separated. Using this as an estimate of remarried rate would
+#'   underestimate it.
+#' - Among more than once union respondents, how was the 1st union ended is
+#'   unknown in any of the states.
 
-#' AFS and AAm
-dta %>%
-    filter(afs %in% 10:55 & marriage_age != 0) %>%
-    summarise(mean(afs > marriage_age))
+#+ echo=F, results="asis"
+dta %>% tabyl(marital_status) |> adorn_pct_formatting() |> kable(caption = "Marital distribution")
+
+dta %>% tabyl(n_union) |> adorn_pct_formatting() |> kable(caption = "Number of union")
 
 dta %>%
-    filter(afs %in% 10:55 & marriage_age != 0) %>%
-    filter(afs > marriage_age) %>%
-    summarise(mean(afs - marriage_age))
+    tabyl(marital_status, n_union) %>%
+    adorn_percentages() %>%
+    adorn_pct_formatting() %>%
+    adorn_ns("front") %>%
+    kable(caption = "Percent rowwise")
+
+dta %>%
+    tabyl(marital_status, n_union) %>%
+    adorn_percentages("col") %>%
+    adorn_pct_formatting() %>%
+    adorn_ns("front") %>%
+    kable(caption = "Percent colwise")
 
 #' married but no afs
 dta %<>% filter(!(marital_status != 0 & afs == 0))
