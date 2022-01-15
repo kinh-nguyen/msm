@@ -383,5 +383,51 @@ as_tibble(unclass(competing_risk_predict_divorce)) %>%
 #
 #' # Appendix
 #' 
+#' ## Descriptive statistics
+#' 
+#+ results="asis"
+dta %>% tabyl(afs) |> adorn_pct_formatting() |> kable(caption = "AFS distribution")
 
-saveRDS(msdta, "data/mw2015.rds")
+dta %>% tabyl(marriage_age) |> adorn_pct_formatting() |> kable(caption = "Marriaged age distribution")
+
+#'
+#' ## Union - time since sexual debut to first union
+#'
+#+ time_since_db_tb, results="asis"
+dta %>%
+    filter(marriage_age_d != "NA-NA") %>%
+    tabyl(time_since_debut_d, marriage_age_d) %>%
+    adorn_totals() %>%
+    adorn_totals("col") %>%
+    adorn_percentages("col") %>%
+    adorn_pct_formatting() %>%
+    adorn_ns("front") %>%
+    kable(caption = "Time since debut to first union")
+
+#+ results="asis"
+dta %>%
+    filter(time_since_debut_c >= 0) %>%
+    filter(afs != 0) %>%
+    tabyl(time_since_debut_d, afs_d) %>%
+    adorn_totals() %>%
+    adorn_totals("col") %>%
+    adorn_percentages("col") %>%
+    adorn_pct_formatting() %>%
+    adorn_ns("front") %>%
+    kable(caption = "Time since debut to first union by AFS")
+
+#' 
+#' ## Dissolution - time since married
+#' 
+# Three way cross-table
+three_ways <- dta %>%
+    tabyl(marital_status, time_since_married_d, n_union) %>%
+    adorn_totals() %>%
+    adorn_totals("col") %>%
+    adorn_percentages() %>%
+    adorn_pct_formatting() %>%
+    adorn_ns("front")
+
+#+ results="asis"
+three_ways$once %>% kable(caption = "Time since married - one union")
+three_ways$`more than once` %>% kable(caption = "Time since married - more than once union")
