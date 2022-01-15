@@ -322,5 +322,23 @@ as_tibble(unclass(competing_risk_predict_divorce)) %>%
         x = "Time since married", y = "Hazard"
     )
 
+#' 
+#' ## More than once union - left-censoring of both event and time
+#' 
+#' **Among those with more than once unions**, it is unknown what states a
+#' respondent has passed through before reaching the current state. Inexact
+#' number of unions also does not allow to narrow down the possible pathways. If
+#' we are interested in hazard of union dissolution from the first union, where
+#' union dissolution is defined as either widowed, divorce, or separate, we can
+#' treat all the states as left-censored at the current time since married.
+#'
+#' However, if we are interested in in specific events of widowed or divorce,
+#' how to specify which state a respondent is censored? Could a probability of
+#' the first union ended in widowed or divorce be used as a weight in specifying
+#' one of the censored events (likelihood contribution). Event if this works,
+#' there are still cases where both states widowed and divorce has been passed
+#' through. So we could only limit the analyses at best to hazard of an event
+#' *after the first union*.
+#' 
 
 saveRDS(msdta, "data/mw2015.rds")
