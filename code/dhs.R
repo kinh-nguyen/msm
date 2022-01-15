@@ -218,11 +218,109 @@ svvm1_fit <- survfit(Surv(time_since_debut_c, event) ~ agegr, data = svvdt)
 #+ surviving_single_afs, fig.cap = "Estimate survival curves by age at first sex"
 library(ggfortify) # for autoplot
 autoplot(svvm1_fit) + labs(title = "Survival single by AFS", x = "Year since AFS") 
+
+#' 
+#' ## Dissolution - time since married
+#' 
+dta %<>%
     mutate(
-        state = factor(state, levels = char(virgin, debut, union, separate, widowed)),
-        state_numeric = as.numeric(state)
-    ) %>% drop_na()
-    
-msdta
+        time_since_married_c = (doi - cmc_uninon) / 12,
+        time_since_married_d = findInterval2(time_since_married_c, seq(0, 20, 5))
+    )
+#' ### Once union - competing risk model with right censored data
+#'
+#' **Among those with only once union**, a majority of the population have
+#' remained in the same marital status for more than 5 years. ~~Nearly 95% of
+#' the widowed respondents has not remarried for 5 to 20+ year after the first
+#' union~~. But since we do not know the time of the event, e.g., time of
+#' partner's death, the above interpretation is only correct for the married and
+#' partnered group. The others groups, widowed, divorced, and separated, the
+#' numbers would more likely reflect the varying in the time of the events.
+#'
+#' Limited to this set of data, a survival model using the time since married
+#' would treat separated, divorce, and widowed as competing events while those
+#' in married or partnered states will be right-censored.
+
+#+ fig.cap="Time since married"
+dta %>%
+    group_by(marital_status, time_since_married_d, n_union) %>%
+    count() %>%
+    drop_na() %>%
+    ggplot() +
+    geom_col(aes(marital_status, n, fill = time_since_married_d), position = position_fill()) +
+    facet_wrap(~n_union) +
+    theme(axis.text.x = element_text(angle = 30))
+
+#' All those in union have records of time of union
+#+ union_by_marriage_age, results = "asis"
+dta %>%
+    filter(n_union == "once") %>%
+    tabyl(marriage_age_d, marital_status) %>%
+    kable(caption = "Time since union by marital statue")
+
+#'
+#' ### Competing risk model for one union data subset
+#'
+#' Package `cmprsk` do the @fineProportionalHazardsModel1999 model.
+#' 
+#' Lines in the figure is
+#'
+#' > exp(-B(t)), where B(t) is the estimated cumulative sub-distribution
+#' hazard obtained for the specified covariate values, obtained from the
+#' Breslow-type estimate of the underlying hazard and the estimated regression
+#' coefficients
+#' 
+competing_risk_data <- dta %>%
+    filter(n_union == "once") %>%
+    select(age, time = time_since_married_c, marital_status) %>%
+    drop_na() %>%
+    mutate(
+        agegr = findInterval2(age, seq(15, 50, 5)),
+        event = case_when(
+            marital_status == "married" ~ 0, # censored
+            marital_status == "union" ~ 0, # censored
+            marital_status == "divorce" ~ 1,
+            marital_status == "separated" ~ 1,
+            marital_status == "widowed" ~ 2
+        )
+    )
+
+competing_risk_data %<>%
+    mutate(agegr = fct_recode(agegr, "45-49" = "50-51"), agegr_c = as.numeric(agegr))
+agegr_lab <- competing_risk_data  %>% tabyl(agegr) %>% pull(agegr)
+
+
+competing_risk_model_divorce <- cmprsk::crr(
+    ftime = competing_risk_data$time,
+    fstatus = competing_risk_data$event,
+    cov1 = competing_risk_data$agegr_c, failcode = 1
+)
+summary(competing_risk_model_divorce)
+
+competing_risk_model_widowed <- cmprsk::crr(
+    ftime = competing_risk_data$time, 
+    fstatus = competing_risk_data$event,
+    cov1 = competing_risk_data$agegr_c, failcode = 2
+)
+summary(competing_risk_model_widowed)
+
+predict_agr <- matrix(1:7, nrow=7)
+competing_risk_predict_divorce <- cmprsk::predict.crr(competing_risk_model_divorce, predict_agr)
+competing_risk_predict_widowed <- cmprsk::predict.crr(competing_risk_model_widowed, predict_agr)
+
+#+ fig.cap = "Competing risk model with `cmprsk` package on one union data subset"
+as_tibble(unclass(competing_risk_predict_divorce)) %>%
+    bind_rows(as_tibble(unclass(competing_risk_predict_widowed)), .id = "risk") %>%
+    mutate(risk = if_else(risk == "1", "Divorce", "Widowed")) %>%
+    pivot_longer(3:9, names_prefix = "V") %>%
+    mutate(agegr = agegr_lab[as.numeric(name) - 1]) %>%
+    ggplot(aes(V1, 1 - value, color = agegr)) +
+    geom_line() +
+    facet_wrap(~risk, scales = "fixed") +
+    labs(
+        title = "Competing risks model on one union data subset",
+        x = "Time since married", y = "Hazard"
+    )
+
 
 saveRDS(msdta, "data/mw2015.rds")
