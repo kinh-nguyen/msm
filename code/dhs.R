@@ -14,6 +14,7 @@
 #' citecolor: red
 #' ---
 #'
+# -----------------------------------------------------------------------------
 
 #+ packages and config, include=FALSE
 library(rdhs)
@@ -77,3 +78,20 @@ dta <- dta |>
         separated = "no longer living together/separated",
         union = "living with partner"
     ))
+
+# -----------------------------------------------------------------------------
+#' 
+#' # References {-}
+#' 
+#' <div id="refs"></div>
+#' 
+#' \setcounter{section}{0}
+#' \renewcommand{\thesection}{\Alph{section}}
+#' \setcounter{table}{0}
+#' \renewcommand{\thetable}{A\arabic{table}}
+#' \setcounter{figure}{0}
+#' \renewcommand{\thefigure}{A\arabic{figure}}
+#
+#' # Appendix
+#' 
+# -----------------------------------------------------------------------------
