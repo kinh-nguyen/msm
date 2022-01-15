@@ -340,5 +340,34 @@ as_tibble(unclass(competing_risk_predict_divorce)) %>%
 #' through. So we could only limit the analyses at best to hazard of an event
 #' *after the first union*.
 #' 
+#' # Methods
+#'
+#' ## Estimate ever divorce by time since married weighted
+#'
+#' @clarkDivorceSubSaharanAfrica2015 estimated the probability of the first
+#' union ending in divorce or widowed using those numbers among *respondents with
+#' only one union*.
+#'
+#' $$p_{\text{divorce}, t} = \frac{\text{currently divorce}}{\text{currently divorce +
+#'   currently widowed}} $$
+#' 
+#' The proportion ever divorce at time $T$ after married was estimated as
+#'
+#' $$p_{\text{ever divorce, T}} = p_{\text{currently divorce}, T} +
+#' p_{\text{remarried}, T} \times
+#' \sum_{t}^T p_{\text{divorce}, t} p_{\text{union dissolution}, t}$$
+#'
+#' where
+#'
+#' $$\sum_{t}^T p_{\text{divorce}, t} p_{\text{union dissolution}, t}$$
+#'
+#' is the cumulative probability of having a prior divorce up to time $T$, with
+#'
+#' $$p_{\text{union dissolution}, t} = p_{\text{ever divorce},t} - p_{\text{ever
+#' union dissolution}, t-1}$$
+#'
+#' The probability of widowhood was estimated as
+#'
+#' $$p_{\text{widowhood}} = p_{\text{union dissolution}} - p_{\text{divorce}}$$
 
 saveRDS(msdta, "data/mw2015.rds")
