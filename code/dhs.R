@@ -172,77 +172,52 @@ dta %>%
     scale_fill_manual(values = ktools::gen_colors(okabe, 9)) +
     labs(x = "Age at first sex", title = "Time since AFS to first union")
 
-dta %<>%
-    rownames_to_column("id") %>%
-    mutate(afs = as.numeric(haven::zap_labels(afs)), marriage_age = as.numeric(marriage_age)) %>%
+#' ### Surviving "single" curve by age of respondent
+#'
+#' Excluding delaying sexual debut after married respondents, standard survival
+#' methods can be applied.
+#'
+#' This is not good. Both the time points are mostly in the past, current age
+#' should not have any role. Replacing by age of first sex would be more
+#' appropriate.
+#'
+#+ cache=TRUE
+library(survival)
+library(ggfortify) # for autoplot
+
+svvdt <- dta %>%
+    filter(afs > 0) %>%
     mutate(
-        t_virgin = if_else(afs == 0, age, afs),
-        t_debut = if_else(afs != 0, afs, NA_real_),
-        t_union = if_else(marriage_age != 0, marriage_age, NA_real_),
-        t_union = if_else(marital_status == 2, age, t_union), 
-        t_widowed = if_else(marital_status == 3, age, NA_real_), 
-        t_separate = if_else(marital_status %in% 4:5, age, NA_real_),
-        censored = marital_status %in% 2:5
-    )
-dta
-
-library("flexsurv")
-n_trans <- max(tmat, na.rm = TRUE)
-#' plot raw data
-library(ggpubr, help, pos = 2, lib.loc = NULL)
-
-four_state_raw <- ggarrange(
-    dta %>% ggplot() +
-        geom_density(aes(t_debut)) +
-        labs(title = "t_debut", x = "Time"),
-    dta %>%
-        mutate(diff = if_else(censored, t_union, t_union - t_debut)) %>%
-        filter(diff >= 0) %>% 
-        ggplot() +
-        geom_density(aes(diff, fill = factor(censored)), alpha=.7) +
-        labs(title = "Debut before Married", fill = "Censored", x = "Time"),
-    dta %>%
-        mutate(diff = if_else(censored, t_union, t_union - t_debut)) %>%
-        filter(diff < 0) %>% 
-        ggplot() +
-        geom_density(aes(diff, fill = factor(censored)), alpha=.7) +
-        labs(title = "Debut after Married", fill = "Censored", x = "Time"),
-    
-    dta %>%
-        mutate(
-            diff = if_else(marriage_age != 0, t_separate - t_union, t_separate),
-            know_aam = marriage_age != 0
-        ) %>%
-        ggplot() +
-            geom_density(aes(diff, fill = factor(know_aam)), alpha = .7) +
-            labs(title = "Separated", fill = "Known age at married?", x = "Time"),
-    
-    dta %>%
-        mutate(
-            diff = if_else(marriage_age != 0, t_widowed - t_union, t_widowed),
-            know_aam = marriage_age != 0
-        ) %>%
-        ggplot() +
-            geom_density(aes(diff, fill = factor(know_aam)), alpha = .7) +
-            labs(title = "Widowed", fill = "Known age at married?", x = "Time"),
-   
-    ncol = 3, nrow = 2
-)
-ggsave("img/four_state_raw.png")
-
-#' Prepare msm format
-msdta <-
-dta %>% 
-    select(age, marital_status, marriage_age, starts_with("t_")) %>%
-    filter(t_union >= t_debut) %>%
-    mutate(
-        pid = 1:n(),
-        t_debut = if_else(t_debut == t_virgin, t_virgin + 1 / 12, t_debut),
-        t_union = if_else(t_union <= t_debut, t_debut + 1 / 12, t_union),
-        t_separate = if_else(t_separate <= t_union, t_union + 1 / 12, t_separate),
-        t_widowed = if_else(t_widowed <= t_union, t_union + 1 / 12, t_widowed),
+        time_since_debut_c = if_else(marriage_age == 0, age - afs, time_since_debut_c),
+        event = as.numeric(marital_status != "never in union"), 
+        agegr = findInterval2(age, seq(15, 50, 5))
     ) %>%
-    pivot_longer(starts_with("t_"), names_to = "state", values_to = "time", names_prefix = "t_") %>%
+    filter(time_since_debut_c >= 0) %>%
+    select(time_since_debut_c, agegr, event)
+
+svvm1_fit <- survfit(Surv(time_since_debut_c, event) ~ agegr, data = svvdt)
+#+ surviving_single_age, fig.cap = "Estimate survival curves by age groups"
+autoplot(svvm1_fit) + labs(title = "Survival single by age", x = "Year since AFS") 
+
+#' 
+#' ### Surviving "single" curve by age at first sex
+#' 
+svvdt <- dta %>%
+    filter(afs > 0) %>%
+    mutate(
+        time_since_debut_c = if_else(marriage_age == 0, age - afs, time_since_debut_c),
+        event = as.numeric(marital_status != "never in union"), 
+        agegr = findInterval2(afs, seq(15, 30, 5))
+    ) %>%
+    filter(time_since_debut_c >= 0) %>%
+    select(time_since_debut_c, agegr, event) %>%
+    mutate(agegr = fct_recode(agegr, '25-29' = '30-42'))
+
+library(survival)
+svvm1_fit <- survfit(Surv(time_since_debut_c, event) ~ agegr, data = svvdt)
+#+ surviving_single_afs, fig.cap = "Estimate survival curves by age at first sex"
+library(ggfortify) # for autoplot
+autoplot(svvm1_fit) + labs(title = "Survival single by AFS", x = "Year since AFS") 
     mutate(
         state = factor(state, levels = char(virgin, debut, union, separate, widowed)),
         state_numeric = as.numeric(state)
