@@ -33,8 +33,10 @@ opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
 #     filter(SurveyYear == 2015)  %>%
 #     mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
 # datasets
+datasets <- readRDS("~/dhs_datasets.rds")
 # downloads <- get_datasets(datasets$FileName)
 # names(downloads)
+downloads <- readRDS("~/dhs_downloads.rds")
 
 x <- 1 # adapt from multiple datasets
 o <- readRDS(downloads[[x]]) %>%
