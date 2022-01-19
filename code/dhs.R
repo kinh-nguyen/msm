@@ -1,11 +1,11 @@
 #' ---
-#' title: "Married, divorce, widowed in women - Malawi 2015"
+#' title: "Poisson format - splitting time"
 #' bibliography: "../zotero_biblatex.bib"
 #' output:
 #'   pdf_document:
 #'     toc: true
 #'     number_sections: true
-#'     keep_tex: false
+#'     keep_tex: true
 #'     include:
 #'       in_header: "~/templates/floatHforRmarkdown.tex"
 #' documentclass: article
@@ -22,10 +22,15 @@ library(tidyverse)
 library(ggplot2)
 library(ggfortify)
 library(janitor)
+library(survival)
+library(Epi)
+library(popEpi)
+library(mgcv)
 tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
 devtools::load_all("~/Code/R/ktools/")
 library(knitr)
 opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
+set.seed(1)
 
 # Pull with `rdhs`
 # set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
@@ -62,14 +67,11 @@ dta <- o %>%
         age = svy - yob, sex = datasets$sex[x]
     )
 
-#' cleaning
-#' # Data cleaning
-#'
-#' Remove those
+#' Data cleaning
 #'
 #' - afs or marriage age greater than age
 #' - married but no afs
-
+#' 
 dta %<>% filter(!(afs > age | marriage_age > age))
 dta %<>% filter(!(marital_status != 0 & afs == 0))
 # dta %<>% filter(afs <= marriage_age)
