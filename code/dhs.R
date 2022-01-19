@@ -162,6 +162,50 @@ cox_mod_ori <- coxph(Surv(time, event) ~ age_0, lexis)
 
 #' Fitted Cox model show age increases rate by 14%.
 ci.exp(cox_mod_ori)
+#'
+#' ## Cox model - time-split data format
+#'
+#' The exposure time is divided by equidistant intervals of length $\tau = 1$,
+#' from zero year to maximum 46 in this data. Status of the respondents at all
+#' periods prior to the end of the study period (\cref{fig:aamModel}) was set to
+#' single.
+#'
+#' Respondent's age at each of the intervals is calculated accordingly and
+#' modelled as a covariate. To avoid dropping of samples with immediate
+#' transition (time at risk is zero), a month was added to the age at marriage
+#' if age at marriage equal age at first sex (or adding 1/12 to exposure time
+#' where exposure time is zero). The example is shown in \cref{tab:data_lexis}.
+#'
+#+ message=F, warnings=F
+lexis %<>% mutate(time = if_else(time == 0, time + 1 / 12, time)) # add a month
+Lx <- Epi::Lexis(
+    exit = list(tar = time),
+    exit.status = factor(event, labels = c("Single", "Married")),
+    data = lexis
+)
+sL <- splitMulti(Lx, tar = seq(0, 46, 1))
+sL %<>% mutate(aar = age_0 + tar)
+
+#+ data_lexis, results = "asis"
+sL %>%
+    head() %>%
+    kable(caption = "\\label{tab:data_lexis}Lexis data format: 
+    lex.id: respondent's id,
+    tar: time at risk,
+    lex.dur: at risk duration,
+    aar: age at risk,
+    age: age at interview,")
+
+summary(sL)
+
+#' A Cox model for this data is fitted with interval format as
+#+ echo=T
+cox_mod_int <- coxph(Surv(tar, tar + lex.dur, lex.Xst=="Married") ~ aar, data = sL)
+
+#+ echo=F
+ci.exp(cox_mod_int)
+
+#' which gives the same estimate of the age at risk coefficient.
 # -----------------------------------------------------------------------------
 #' 
 #' # References {-}
