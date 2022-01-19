@@ -206,6 +206,59 @@ cox_mod_int <- coxph(Surv(tar, tar + lex.dur, lex.Xst=="Married") ~ aar, data = 
 ci.exp(cox_mod_int)
 
 #' which gives the same estimate of the age at risk coefficient.
+#'
+#' ## Poisson model - counts data format
+#'
+#' Counting the events and person-year by time at risk and age at risk
+#' (\cref{tab:dataCountFormat}). The empirical rates of marriage are shown in
+#' \cref{fig:empirical_rate} where time since at risk is grouped for
+#' visualization.
+#'
+psdata <- sL %>%
+    group_by(tar, aar) %>%
+    summarise(
+        count = sum(lex.Xst == "Married"),
+        person_year = n()
+    ) %>%
+    ungroup() %>% as.data.frame()
+
+#+ results = "asis"
+psdata %>%
+    head() %>%
+    kable(caption = "\\label{tab:dataCountFormat}Count data format")
+
+caption_long <-
+    "Rate of marriage per person-year by exposure time and age at risk based on
+    count format data. Thick line is median across exposure time."
+
+#+ empirical_rate, fig.cap = caption_long
+psdata %>%
+    # grouping for plotting only
+    mutate(tar2 = findInterval2(tar, c(0:10, 15, 20))) %>%
+    group_by(tar2, aar) %>%
+    mutate(count = sum(count), person_year = sum(person_year)) %>%
+    ungroup() %>%
+    mutate(rate = count / person_year) %>%
+    group_by(aar) %>%
+    mutate(med = median(rate)) %>%
+    ggplot() +
+    geom_line(aes(aar, rate, color = factor(tar2))) +
+    geom_line(aes(aar, med), size = 2) +
+    scale_color_viridis_d() +
+    theme(legend.position = 'bottom') +
+    labs(color = "Time since at risk", x = "Age at risk")
+
+#' Fitting Poisson model with time at risk (TAR) as a covariate and
+#' $\log(\text{person-year}))$ as offset gave a ~~slightly larger effect of age at
+#' risk, 16% vs. 14%~~ (due to removal of 30+ time at risk) the same estimate of
+#' age at risk effect (\cref{tab:poisson_model}).
+#' 
+#' Now the model 
+#' 
+mp1 <- gam(count ~ aar + tar, poisson(link = "log"), psdata, offset = log(person_year))
+
+#+ poisson_model, results = 'asis'
+ci.exp(mp1) |> knitr::kable(caption='\\label{tab:poisson_model}Poisson model with fixed TAR effect')
 # -----------------------------------------------------------------------------
 #' 
 #' # References {-}
