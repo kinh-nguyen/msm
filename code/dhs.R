@@ -116,6 +116,52 @@ bind_rows(
 #' the two standard cases (1 and 2), respondent's age at the exposure time are
 #' taken into account.
 #' 
+#' ## Cox model - original data
+#' 
+#' Age at the start of exposure time is used as covariate, not age at interview.
+#' In particular, the data is recoded as
+#' 
+#' ```r
+#' age_0 = case_when(
+#'     event == 1 & afs != 0 & afs <= marriage_age ~ afs, # age count from afs
+#'     event == 0 & afs != 0 ~ afs, # age count from afs
+#'     event == 1 & afs != 0 & afs > marriage_age ~ 0, # age count from birth
+#'     event == 1 & afs == 0 ~ 0, # age count from birth
+#'     event == 0 & afs == 0 ~ 0 # age count from a
+#' )
+#' ```
+#' 
+#' which can be see in \ref{tab:data_cox_classic}.
+lexis <- dta %>%
+    select(age, marriage_age, afs) %>%
+    mutate(
+        across(where(is.integer), as.numeric),
+        event = as.numeric(marriage_age != 0),
+        age_0 = case_when(
+            event == 1 & afs != 0 & afs <= marriage_age ~ afs, # age count from afs
+            event == 0 & afs != 0 ~ afs, # age count from afs
+            event == 1 & afs != 0 & afs > marriage_age ~ 0, # age count from birth
+            event == 1 & afs == 0 ~ 0, # age count from birth
+            event == 0 & afs == 0 ~ 0 # age count from a
+        ),
+        time = case_when(
+            event == 1 & afs != 0 & afs <= marriage_age ~ marriage_age - afs, 
+            event == 0 & afs != 0 ~ age - afs, 
+            event == 1 & afs != 0 & afs > marriage_age ~ marriage_age, 
+            event == 1 & afs == 0 ~ marriage_age,
+            event == 0 & afs == 0 ~ age
+        )
+    )
+#+ data_cox_classic, results = "asis"
+lexis %>%
+    head() %>%
+    kable(caption = "\\label{tab:data_cox_classic}Data format for Cox model with age at risk recoded")
+
+#+ echo=TRUE
+cox_mod_ori <- coxph(Surv(time, event) ~ age_0, lexis)
+
+#' Fitted Cox model show age increases rate by 14%.
+ci.exp(cox_mod_ori)
 # -----------------------------------------------------------------------------
 #' 
 #' # References {-}
