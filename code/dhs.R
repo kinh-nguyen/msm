@@ -259,6 +259,43 @@ mp1 <- gam(count ~ aar + tar, poisson(link = "log"), psdata, offset = log(person
 
 #+ poisson_model, results = 'asis'
 ci.exp(mp1) |> knitr::kable(caption='\\label{tab:poisson_model}Poisson model with fixed TAR effect')
+
+#' ## Smoothed age effect
+#' 
+#' To reflect the observed nonlinear age effect in \cref{fig:empirical_rate}.
+#' Age effect is smoothed with `gam` as follows:
+#' 
+mp2 <- gam(count ~ s(aar) + s(tar), poisson(link = "log"), psdata, offset = log(person_year))
+#' The model with smoothed age effect shows significant improvement, as seen in
+#' in \Cref{fig:poisson_rate_separate}. Rate of marriage increases with age and taping
+#' off from age 25. Consider adolescent age, marriage are more likely to occur
+#' within a year exposed to risk (sexual debut in this case). 
+
+#+ echo=F
+anova(mp1, mp2, test = "Chisq")
+
+# prediction data frame
+nd <- crossing(aar = 10:30, tar = c(0,1,2,3,5,7,10))
+
+#+ poisson_rate_merge, fig.cap = 'Estimate rate of marriage by age'
+rom <- ci.pred(mp2, nd) %>%
+    as_tibble() %>%
+    rename_with(~ char(est, lo, up)) %>%
+    bind_cols(nd) %>%
+    left_join(psdata, char(aar, tar))  %>% 
+    ggplot() +
+    geom_point(aes(aar, count/person_year, color = factor(tar))) +
+    geom_line(aes(aar, est, color = factor(tar))) +
+    geom_ribbon(aes(aar, est, ymin=lo, ymax=up, fill = factor(tar)), alpha = .5) +
+    labs(
+        title = "Poisson model with fixed effect of TAR",
+        x = "Age", y = "Rate", color = "Time since at risk"
+    ) + guides(fill = FALSE)
+rom
+
+#+ poisson_rate_separate, fig.cap = 'Estimate rate of marriage by age'
+rom + facet_wrap(~tar, scales = 'fixed')
+
 # -----------------------------------------------------------------------------
 #' 
 #' # References {-}
