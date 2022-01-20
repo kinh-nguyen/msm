@@ -312,3 +312,94 @@ rom + facet_wrap(~tar, scales = 'fixed')
 #' # Appendix
 #' 
 # -----------------------------------------------------------------------------
+#' ## Splitting time - collecting...
+#'
+#' The common survival analysis views time as the response variable. If survival
+#' model is viewed from the demographic aspect, the basic observation is not one
+#' time to event (or censoring) for each individual, but rather many periods of
+#' follow up from each individual. This means modeling of rates rather than time
+#' to response, where response is a dichotomous outcome in each interval.
+#'
+#' In this set up, time is a covariate and exposure time is response. Stratified
+#' analysis becomes an interaction between time and a categorical covariate, and
+#' time-varying coefficients becomes interactions between time and a continuous
+#' covariate. Finally, the modeling can be done with Poisson regression
+#' framework.
+#'
+#' The Cox-model is a special case of a Poisson model where the time covariate
+#' is modelled with one parameter per failure time. Poisson modeling of disease
+#' rates and follow-up studies are usually restricted to constant rate over
+#' time-spans, If follow-up time are in small intervals, smoothing of rates can
+#' be done by splitting the follow-up in small intervals, and modeling datasets
+#' in which each record represents a period of follow-up time for a person.
+#'
+#' Takes the survival $X$ as response variable and censoring by time $Z$. In
+#' survival data we only observe the time $\min(X,Z)$ and the event indicator
+#' $\delta = 1{X < Z}$.  In a life-table, differences on the time scale are
+#' accumulated as risk time whereas the position on the time scale (age) for
+#' these are used as a covariate.
+#'
+#' Consider a study where the follow-up time for each individual is divided into
+#' small intervals of equal length $y$ and each with an exit status recorded (0
+#' for most of the intervals and 1 for the last interval for individuals
+#' experiencing an event). Each interval contributes an observation of an
+#' empirical rate, $(d, y)$, where $d$ is the number of events in the interval,
+#' and $y$ is the length of the interval, i.e. the risk time. This definition is
+#' slightly different from the traditional as $d/y$ (or $\sum d/\sum y$) in that
+#' it keep the entire information content in the observation even if the number
+#' of events is 0. This makes it usable as a response variable in all
+#' situations.
+#'
+#' The rate of event occurrence is defined as a function of some timescale, $t$:
+#'
+#' $$\lambda(t) = \lim_{h\rightarrow 0} \frac{P{\text{event in} (t, t + h]|
+#' \text{at risk at time} t}}{h}$$
+#'
+#' The rate may depend on covariates. In this formulation time $t$ is a
+#' covariate and $h$ is risk time, namely the difference between two points on
+#' the time ($t + h$ and $t$).
+#'
+#' The likelihood contribution from an observed $(d, y)$ for an interval with
+#' constant rate $\lambda$ is a Bernoulli likelihood with probability $\lambda
+#' y$
+#'
+#' $$L(\lambda | (d, y)) = (\lambda y)^d (1 - \lambda y)^{1 - d} =
+#' ( \frac{\lambda y}{1 - \lambda y} )^d (1 - \lambda y)$$
+#'
+#' $$\log(L) = l(\lambda | (d, y)) = d \log( \frac{\lambda y}{1 - \lambda y} ) +
+#' \log(1 - \lambda y) $$
+#'
+#' The contributions to the likelihood from one individual are conditionally
+#' independent, i.e, the total likelihood from one individual across intervals
+#' $t_0, t_1, t_2, t_3, t_4$ is
+
+#' \begin{flalign}
+#' P{\text{event at} t_4| alive at t0} &= P(\text{event at} t_4| alive at t_3)\\
+#' &\times P(survive (t_2, t_3)| alive at t_2) \\
+#' &\times P(survive (t_1, t_2)| alive at t_1) \\
+#' &\times P(survive (t_0, t_1)| alive at t_0)
+#' \end{flalign}
+
+#' which is similar to independent Poisson observations likelihood. The amount
+#' and spacing of events limits how detailed the rates can be modelled. The
+#' model depends on how large intervals of constant rate is acceptable to the
+#' study context.
+#'
+#' The Cox model specifies the intensity $\lambda$ as a function of time ($t$)
+#' and the covariates $(x_1,...,x_p)$ through the linear predictor $\eta_i =
+#' \beta_1 x_{1i} + \beta_p x_{pi}$ as:
+#'
+#' $$\lambda(t, x_i) = \lambda_0(t) \exp(\eta_i)$$
+#'
+#' with the partial log-likelihood
+#'
+#' $$l(\beta) = \sum_{\text{death times}} \log(\frac{e^{\eta_{death}}{\sum_{i\in
+#' R_t}e^{\eta_i}}})$$
+#'
+#' where $R_t$ is the risk set at time $t$ including all individuals at risk at
+#' time $t$
+#'
+#' The assumption behind the Poisson approach is essentially only the assumption
+#' that a model with constant rates in each small interval gives an adequate
+#' description of data. So in practice we would split data in small equidistant
+#' intervals
