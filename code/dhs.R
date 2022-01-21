@@ -1,5 +1,5 @@
 #' ---
-#' title: "Poisson format - splitting time"
+#' title: "INLA fit to Poisson vs GAM"
 #' bibliography: "../zotero_biblatex.bib"
 #' output:
 #'   pdf_document:
@@ -20,17 +20,21 @@
 library(rdhs)
 library(tidyverse)
 library(ggplot2)
-library(ggfortify)
 library(janitor)
 library(survival)
 library(Epi)
 library(popEpi)
 library(mgcv)
 tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
-devtools::load_all("~/Code/R/ktools/")
 library(knitr)
 opts_chunk$set(echo = FALSE, cache = FALSE, out.extra = "")
 set.seed(1)
+
+library(INLA)
+remotes::install_github("kklot/ktools")
+library(ktools)
+remotes::install_github("kklot/inlar")
+library(inlar)
 
 # Pull with `rdhs`
 # set_rdhs_config(email = "ath19@ic.ac.uk", project = "Statistics and Machine Learning for HIV")
@@ -116,22 +120,6 @@ bind_rows(
 #' the two standard cases (1 and 2), respondent's age at the exposure time are
 #' taken into account.
 #' 
-#' ## Cox model - original data
-#' 
-#' Age at the start of exposure time is used as covariate, not age at interview.
-#' In particular, the data is recoded as
-#' 
-#' ```r
-#' age_0 = case_when(
-#'     event == 1 & afs != 0 & afs <= marriage_age ~ afs, # age count from afs
-#'     event == 0 & afs != 0 ~ afs, # age count from afs
-#'     event == 1 & afs != 0 & afs > marriage_age ~ 0, # age count from birth
-#'     event == 1 & afs == 0 ~ 0, # age count from birth
-#'     event == 0 & afs == 0 ~ 0 # age count from a
-#' )
-#' ```
-#' 
-#' which can be see in \ref{tab:data_cox_classic}.
 lexis <- dta %>%
     select(age, marriage_age, afs) %>%
     mutate(
@@ -152,18 +140,8 @@ lexis <- dta %>%
             event == 0 & afs == 0 ~ age
         )
     )
-#+ data_cox_classic, results = "asis"
-lexis %>%
-    head() %>%
-    kable(caption = "\\label{tab:data_cox_classic}Data format for Cox model with age at risk recoded")
 
-#+ echo=TRUE
-cox_mod_ori <- coxph(Surv(time, event) ~ age_0, lexis)
-
-#' Fitted Cox model show age increases rate by 14%.
-ci.exp(cox_mod_ori)
-#'
-#' ## Cox model - time-split data format
+#' ## Time-split data format
 #'
 #' The exposure time is divided by equidistant intervals of length $\tau = 1$,
 #' from zero year to maximum 46 in this data. Status of the respondents at all
@@ -177,7 +155,7 @@ ci.exp(cox_mod_ori)
 #' where exposure time is zero). The example is shown in \cref{tab:data_lexis}.
 #'
 #+ message=F, warnings=F
-lexis %<>% mutate(time = if_else(time == 0, time + 1 / 12, time)) # add a month
+#' lexis %<>% mutate(time = if_else(time == 0, time + 1 / 12, time)) # add a month
 Lx <- Epi::Lexis(
     exit = list(tar = time),
     exit.status = factor(event, labels = c("Single", "Married")),
@@ -198,15 +176,6 @@ sL %>%
 
 summary(sL)
 
-#' A Cox model for this data is fitted with interval format as
-#+ echo=T
-cox_mod_int <- coxph(Surv(tar, tar + lex.dur, lex.Xst=="Married") ~ aar, data = sL)
-
-#+ echo=F
-ci.exp(cox_mod_int)
-
-#' which gives the same estimate of the age at risk coefficient.
-#'
 #' ## Poisson model - counts data format
 #'
 #' Counting the events and person-year by time at risk and age at risk
@@ -231,7 +200,6 @@ caption_long <-
     "Rate of marriage per person-year by exposure time and age at risk based on
     count format data. Thick line is median across exposure time."
 
-#+ empirical_rate, fig.cap = caption_long
 psdata %>%
     # grouping for plotting only
     mutate(tar2 = findInterval2(tar, c(0:10, 15, 20))) %>%
@@ -240,7 +208,10 @@ psdata %>%
     ungroup() %>%
     mutate(rate = count / person_year) %>%
     group_by(aar) %>%
-    mutate(med = median(rate)) %>%
+    mutate(med = median(rate)) -> empirical_rate
+
+#+ empirical_rate, fig.cap = caption_long
+empirical_rate %>%
     ggplot() +
     geom_line(aes(aar, rate, color = factor(tar2))) +
     geom_line(aes(aar, med), size = 2) +
@@ -248,19 +219,7 @@ psdata %>%
     theme(legend.position = 'bottom') +
     labs(color = "Time since at risk", x = "Age at risk")
 
-#' Fitting Poisson model with time at risk (TAR) as a covariate and
-#' $\log(\text{person-year}))$ as offset gave a ~~slightly larger effect of age at
-#' risk, 16% vs. 14%~~ (due to removal of 30+ time at risk) the same estimate of
-#' age at risk effect (\cref{tab:poisson_model}).
-#' 
-#' Now the model 
-#' 
-mp1 <- gam(count ~ aar + tar, poisson(link = "log"), psdata, offset = log(person_year))
-
-#+ poisson_model, results = 'asis'
-ci.exp(mp1) |> knitr::kable(caption='\\label{tab:poisson_model}Poisson model with fixed TAR effect')
-
-#' ## Smoothed age effect
+#' ## Smoothed age effect and tar - GAM model
 #' 
 #' To reflect the observed nonlinear age effect in \cref{fig:empirical_rate}.
 #' Age effect is smoothed with `gam` as follows:
@@ -270,9 +229,6 @@ mp2 <- gam(count ~ s(aar) + s(tar), poisson(link = "log"), psdata, offset = log(
 #' in \Cref{fig:poisson_rate_separate}. Rate of marriage increases with age and taping
 #' off from age 25. Consider adolescent age, marriage are more likely to occur
 #' within a year exposed to risk (sexual debut in this case). 
-
-#+ echo=F
-anova(mp1, mp2, test = "Chisq")
 
 # prediction data frame
 nd <- crossing(aar = 10:30, tar = c(0,1,2,3,5,7,10))
@@ -290,11 +246,111 @@ rom <- ci.pred(mp2, nd) %>%
     labs(
         title = "Poisson model with fixed effect of TAR",
         x = "Age", y = "Rate", color = "Time since at risk"
-    ) + guides(fill = FALSE)
+    ) + guides(fill = 'none')
 rom
 
 #+ poisson_rate_separate, fig.cap = 'Estimate rate of marriage by age'
 rom + facet_wrap(~tar, scales = 'fixed')
+
+#' ## Poisson vs Zero-inflated poisson with INLA
+#'
+#' The likelihood is defined as
+#'
+#' $$\text{Prob}(y \mid \ldots ) = p \times 1_{[y=0]} + (1-p)\times \text{Poisson}(y)$$
+#'
+#' where $p$ is a hyperparameter where
+#'
+#' $$p = \frac{\exp(\theta)}{1+\exp(\theta)}$$
+#'
+#' and the Gaussian prior is defined on $\theta$.
+result0 = inla(
+    count ~ f(aar, model = "rw1") + f(tar, model = "rw1") + offset(ln_py),
+    family = "zeroinflatedpoisson1",
+    data = psdata %>% bind_rows(nd %>% mutate(count = NA)) %>% mutate(ln_py = log(person_year)),
+    # data = psdata %>% filter(person_year != 1) %>% bind_rows(nd %>% mutate(count = NA)) %>% mutate(ln_py = log(person_year)),
+    control.predictor = list(compute = TRUE, link = 1),
+    control.compute = list(config = TRUE, waic = T)
+)
+
+result1 = inla(
+    count ~ f(aar, model = "rw1") + f(tar, model = "rw1") + offset(ln_py),
+    family = "poisson",
+    data = psdata %>% bind_rows(nd %>% mutate(count = NA)) %>% mutate(ln_py = log(person_year)),
+    # data = psdata %>% filter(person_year != 1) %>% bind_rows(nd %>% mutate(count = NA)) %>% mutate(ln_py = log(person_year)),
+    control.predictor = list(compute = TRUE, link = 1),
+    control.compute = list(config = TRUE, waic = T)
+)
+
+#+ WAIC, results = 'asis'
+bind_rows(
+    result1$waic[1:2] %>% bind_cols() %>% mutate(model = "Poisson"),
+    result0$waic[1:2] %>% bind_cols() %>% mutate(model = "Zero-inflated")
+) %>%
+    relocate(model, .before = waic) %>%
+    knitr::kable(caption = "\\label{tab:waic}WAIC Poisson vs Zero-inflated Poisson")
+
+#' Estimate the probability of having no case of marriage is 7%. This is not
+#' what we want. The exceed zeros in is the zero in time, not zero in number of
+#' marriages in a period.
+#' 
+#' Let work on this to get INLA into the story. Mainly how to deal with
+#' prediction without the offset: fitted values will include `offset` but does
+#' not include `E`
+#' 
+#+ hyperpar_poisson1, results = 'asis'
+result0$summary.hyperpar %>%
+    select(1:2)  |> 
+    knitr::kable(caption='\\label{tab:hyperpar_poisson}Poisson zero-inflated hyperparameters')
+result1$summary.hyperpar %>%
+    select(1:2)  |> 
+    knitr::kable(caption='\\label{tab:hyperpar_poisson}Poisson hyperparameters')
+
+#' Effect of AAR and TAR are shown in \cref{fig:inla_poisson_re}.
+#'
+#+ inla_poisson_re, fig.cap = 'RW2 models for age and time at risk'
+autoplot(result0, "summary", "random") + facet_wrap(~var, scales = "free") +
+    geom_hline(yintercept = 0)
+
+#+ inla_poisson_fitted, fig.cap = 'Fitted values vs median - INLA'
+autoplot(result0, "summary", "fitted.values") +
+    geom_abline(slope = 1, intercept = 0)
+
+#' Sample from posteriors and get the prediction for the combinations of TAR and AAR.
+#' 
+r.samples <- inla.posterior.sample(n = 100, result = result0, num.threads = 4)
+post_latent <- r.samples %>%
+    as_tibble(var = "latent") %>%
+    filter(term == "Predictor") %>%
+    slice(nrow(psdata) + 1:nrow(nd)) %>%
+    group_by(term_id) %>%
+    summarise(value = mean(value), up = quantile(value, probs = .975), lo = quantile(value, probs = 0.025)) %>%
+    bind_cols(nd)
+
+r.samples <- inla.posterior.sample(n = 100, result = result1, num.threads = 4)
+post_latent1 <- r.samples %>%
+    as_tibble(var = "latent") %>%
+    filter(term == "Predictor") %>%
+    slice(nrow(psdata) + 1:nrow(nd)) %>%
+    group_by(term_id) %>%
+    summarise(value = mean(value), up = quantile(value, probs = .975), lo = quantile(value, probs = 0.025)) %>%
+    bind_cols(nd)
+
+psdata %>%
+    group_by(tar, aar) %>%
+    mutate(count = sum(count), person_year = sum(person_year)) %>%
+    ungroup() %>%
+    mutate(rate = count / person_year) %>%
+    group_by(aar) %>%
+    mutate(med = median(rate)) -> empirical_rate
+
+post_latent %>%
+    bind_rows(post_latent1, .id = "model") %>%
+    mutate(model = if_else(model == 1, "Poisson", "Zero-inflated")) %>%
+    left_join(empirical_rate, char(tar, aar))  %>%
+    ggplot() +
+    geom_line(aes(aar, exp(value), color = factor(tar), linetype = model)) +
+    geom_point(aes(aar, rate, color = factor(tar))) +
+    facet_wrap(~tar)
 
 # -----------------------------------------------------------------------------
 #' 
