@@ -91,7 +91,7 @@ Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
 dta %>%
-    select(afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>% 
+    select(yob, sex, afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>%
     mutate(ms = if_else(ms == "union", "married", ms)) %>% 
     mutate(afs = if_else(afs != 0 & afs >= aam, aam, afs)) %>% # remove VX if VM
     mutate(
@@ -116,6 +116,11 @@ dta %>%
     allot(d)
 
 saveRDS(d, here::here('data/d.rds'))
-```
 
+d %>% 
+    count(afs, VV, VX, XX, XM, MM, aam, J, MJ, delta, yob) %>% 
+    rename(w = n) %>% 
+    allot(d_agg)
+
+saveRDS(d_agg, here::here('data/d_agg.rds'))
 ```

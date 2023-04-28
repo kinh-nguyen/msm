@@ -3,40 +3,45 @@ source("~/Documents/libs.r")
 
 MAX_AGE = 50
 N_PAR = 8
+N_YOB = 37 # 1965-2001
 
 library(TMB)
 TMB::compile("code/model.cpp")
 base::dyn.load(TMB::dynlib("code/model"))
 invisible(TMB::config(tape.parallel = 0, DLL = "model"))
 TMB::openmp(1)
+d <- readRDS(here("data/d_agg.rds"))
+d
 
-data <- readRDS(here("data/prep.rds")) %>%
-d <- readRDS(here("data/d.rds"))
 N <- 3000
 data <- d %>% 
     mutate(across(everything(), haven::zap_label)) %>%
     mutate(across(everything(), as.integer)) %>%
-    slice_sample(n = 100) %>%
-    mutate(J = J - 1) %>%
+    mutate(J = J - 1, yob = yob - min(yob)) %>%
     slice_head(n = N) %>% 
     as.list()
 
-data$modelmatrix <- model.matrix(~ age , data.frame(age = 0:MAX_AGE))
-
-expect_true(max(data$age) <= MAX_AGE)
+# expect_true(max(data$age) <= MAX_AGE)
+expect_true(max(data$yob) <= N_YOB)
 expect_true(max(data$delta) <= MAX_AGE)
 expect_true(all((data$afs + data$n_N) <= data$age))
 expect_true(all((data$aam + data$n_N) <= data$age))
 expect_true(max(data$J) == 6)
 
-data$sd_b <- c(0, 0.1)
 data$sd_q <- c(log(0.001), 0.1) # log normal mean and sd
 str(data)
 
-init <- list(betas = rnorm(2 * N_PAR, log(0.001), 1))
+init <- list(
+    betas = rnorm(2 * N_PAR, log(0.001), 1),
+    yobsm = rnorm(N_YOB * N_PAR, log(0.001), 1),
+    pacf = c(0, 1)
+    )
 str(init)
 
-obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
+obj <- TMB::MakeADFun(
+    data, 
+    init, 
+    DLL = "model", silent = TRUE)
 fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1, maxit = 500))
 rp <- obj$report(obj$env$last.par.best); str(rp)
 p_id <- char(VX, XM, MS, MD, MW, SR, DR, WR)
@@ -45,31 +50,26 @@ p_lb <- char(
     "Separated>>Remarried", "Divorced>>Remarried", "Widowed>>Remarried"
 )
 
-vis <- function(x, rt = F) {
-    X <- array(rp[[x]], c(7, 7, 50))
-    tibble(
-        age = 1:50,
-        VX = X[1, 2, ],
-        VM = X[1, 3, ],
-        XM = X[2, 3, ],
-        MS = X[3, 4, ],
-        MD = X[3, 5, ],
-        MW = X[3, 6, ],
-        SR = X[4, 7, ],
-        DR = X[5, 7, ],
-        WR = X[6, 7, ],
-    ) %>%
-        pivot_longer(-age) %>%
-        mutate(name = factor(name, levels = char(VX, VM, XM, MS, MD, MW, SR, DR, WR))) %>%
-        allot(o)
-    if (rt) return(o)
-    o %>% ggplot(aes(age, value, color = name)) +
-        geom_line()
-}
+rp <- obj$simulate() 
+estP <- rp$estP %>% array(c(7,7,51,N_YOB))
 
-vis("KM.masterP") + facet_wrap(~name, scales = "free")
+tibble(
+    age = 1:51,
+    VX = estP[1, 2, , 36],
+    VM = estP[1, 3, , 36],
+    XM = estP[2, 3, , 36],
+    MS = estP[3, 4, , 36],
+    MD = estP[3, 5, , 36],
+    MW = estP[3, 6, , 36],
+    SR = estP[4, 7, , 36],
+    DR = estP[5, 7, , 36],
+    WR = estP[6, 7, , 36],
+) %>% 
+    pivot_longer(-age) %>%
+    mutate(name = factor(name, levels = char(VX, VM, XM, MS, MD, MW, SR, DR, WR))) %>%
+    allot(o)
 
-vis("KM.masterP", 1) %>% 
+o %>% 
 pivot_wider(names_from = name, values_from = value) %>% 
 transmute(
     age = age,
