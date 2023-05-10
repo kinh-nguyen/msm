@@ -5,20 +5,21 @@
 #define N_D 51 // differences, more than needed
 #define N_PAR 9
 #define N_Q 7
+#define N_CC 37
 
 using Eigen::seqN;
 
 template <class T> 
 struct Kube {
     vector<T> 
-        masterQ = vector<T>(N_AGE * N_Q * N_Q),
-        masterP = vector<T>(N_AGE * N_Q * N_Q),
-        masterD = vector<T>(N_AGE * N_Q * N_Q * N_D);
+        masterQ = vector<T>(N_AGE * N_Q * N_Q * N_CC),
+        masterP = vector<T>(N_AGE * N_Q * N_Q * N_CC),
+        masterD = vector<T>(N_AGE * N_Q * N_Q * N_D * N_CC);
     matrix<T> 
         qM = matrix<T>(N_Q, N_Q),
         pM = matrix<T>(N_Q, N_Q), 
         pD = matrix<T>(N_Q, N_Q), 
-        est = matrix<T>(N_AGE, N_PAR);
+        est = matrix<T>(N_AGE * N_CC, N_PAR);
     int len = N_Q * N_Q;
     Kube () {};
     Kube (matrix<T> modelmatrix, vector<T> betas)
@@ -26,35 +27,40 @@ struct Kube {
         masterP.setZero();
         masterQ.setZero();
         masterD.setZero();
-        for (int i = 0; i < N_PAR; i++)
-            est.col(i) = modelmatrix * betas({i, i + N_PAR}).matrix();
+        matrix<T> beta_i(N_CC + 2, 1);
+        for (int i = 0; i < N_PAR; i++) {
+            beta_i << betas({i, N_PAR + i}), betas(seqN(2*N_PAR + i*N_CC, N_CC));
+            est.col(i) = modelmatrix * beta_i;
+        }
         est = exp(est.array());
-        for (int i = 0; i < N_AGE; i++) {
+        for (int a = 0; a < N_AGE; a++) {
+        for (int c = 0; c < N_CC; c++) {
             qM.setZero(); 
-            qM(0, 1) = est(i, 0); // debut
-            qM(0, 2) = est(i, 1); // marriage from virgin
-            qM(1, 2) = est(i, 2); // marriage from debut
-            qM(2, {3,4,5}) = est(i, {3,4,5}); // marriage dissolution
-            qM({3,4,5}, 6) = est(i, {6,7,8}); // disso > remarried
-            qM(6, {3,4,5}) = est(i, {3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
+            int r = a*N_CC + c;
+            qM(0, 1) = est(r, 0); // debut
+            qM(0, 2) = est(r, 1); // marriage from virgin
+            qM(1, 2) = est(r, 2); // marriage from debut
+            qM(2, {3,4,5}) = est(r, {3,4,5}); // marriage dissolution
+            qM({3,4,5}, 6) = est(r, {6,7,8}); // disso > remarried
+            qM(6, {3,4,5}) = est(r, {3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
             qM.diagonal() = T(-1) * qM.rowwise().sum();
-            memcpy(&masterQ(0) + i * len, &qM(0), sizeof(T) * len);
+            memcpy(&masterQ(0) + a*N_CC*len + c*len, &qM(0), sizeof(T)*len);
             pM = expm(qM);
-            memcpy(&masterP(0) + i * len, &pM(0), sizeof(T) * len);
-            for (int j = 0; j < N_D; j++) { // prep delta
-                matrix<T> tmp = qM * j;
+            memcpy(&masterP(0) + a*N_CC*len + c*len, &pM(0), sizeof(T)*len);
+            for (int d = 0; d < N_D; d++) { // prep delta
+                matrix<T> tmp = qM * d;
                 pD = expm(tmp);
-                memcpy(&masterD(0) + i * len * N_D + j * len, &pD(0), sizeof(T) * len);
+                memcpy(&masterD(0) + a*N_CC*N_D*len + c*N_D*len + d*len, &pD(0), sizeof(T)*len);
+            }
             }
         }
     };
-    matrix<T> operator()(int a, bool diag = true){
-        matrix<T> ans = masterP(Eigen::seqN(a * len, len)).reshaped(N_Q, N_Q);
-        if (!diag) for (int i = 0; i < N_Q; ++i) ans(i, i) = T(0);
+    matrix<T> operator()(int c, int a){
+        matrix<T> ans = masterP(seqN(a*N_CC*len + c*len, len)).reshaped(N_Q, N_Q);
         return ans;
     };
-    matrix<T> operator()(int a, int d, bool diag = true){
-        matrix<T> ans = masterD(Eigen::seqN(a * len * N_D + d * len, len)).reshaped(N_Q, N_Q);
+    matrix<T> operator()(int c, int a, int d){
+        matrix<T> ans = masterD(seqN(a*N_CC*N_D*len + c*N_D*len + d*len, len)).reshaped(N_Q, N_Q);
         return ans;
     }
 };
@@ -79,12 +85,14 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(J);
   DATA_IVECTOR(delta);
   DATA_VECTOR(count);
+  DATA_IVECTOR(cid);
   
-  DATA_MATRIX(modelmatrix);
+  DATA_SPARSE_MATRIX(modelmatrix);
 
   // priors
   DATA_VECTOR(prior_base);
   DATA_VECTOR(prior_t);
+  DATA_VECTOR(prior_cc);
 
   // Coefs
   PARAMETER_VECTOR(betas);
@@ -104,6 +112,11 @@ Type objective_function<Type>::operator() ()
   // Soft-constraints remarried to be the same
   prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 7), Type(0), Type(0.001), true);
   prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 8), Type(0), Type(0.001), true);
+  // cc's coeff | random intercept
+  for (int i = 0; i < N_PAR; i++) {
+    vector<Type> f_cc = betas(seqN(N_PAR*2 + i*N_CC, N_CC));
+    prior -= dnorm(f_cc, prior_cc(0), prior_cc(1), true).sum();
+  }
 
   Kube<Type> KM(modelmatrix, betas);
 
@@ -113,21 +126,21 @@ Type objective_function<Type>::operator() ()
   for (int i = 0; i < afs.size(); i++) {
     if (VV[i] > 0)
         for (int j = 0; j <= VV[i]; j++)
-            o(i, 0) *= KM(j)(0,0);
+            o(i, 0) *= KM(cid[i], j)(0,0);
     if (VX[i] > 0)
-            o(i, 1) *= KM(VX[i])(0,1);
+            o(i, 1) *= KM(cid[i], VX[i])(0,1);
     if (XX[i] > 0)
         for (int j = afs[i]; j <= afs[i] + XX[i]; j++) 
-            o(i, 2) *= KM(j)(1,1);
+            o(i, 2) *= KM(cid[i], j)(1,1);
     if (XM[i] > 0)
-            o(i, 3) *= KM(XM[i])(1,2);
+            o(i, 3) *= KM(cid[i], XM[i])(1,2);
     if (MM[i] > 0)
         for (int j = aam[i]; j <= aam[i] + MM[i]; j++) 
-            o(i, 4) *= KM(j)(2,2);
+            o(i, 4) *= KM(cid[i], j)(2,2);
     if (MJ[i] > 0)
-            o(i, 5) *= KM(MJ[i], delta[i])(2,J[i]);
+            o(i, 5) *= KM(cid[i], MJ[i], delta[i])(2,J[i]);
     if (VM[i] > 0)
-            o(i, 6) *= KM(VM[i])(0,2);
+            o(i, 6) *= KM(cid[i], VM[i])(0,2);
   }
   REPORT(o);
   o = log(o.array()); // all the 1s disapear here

@@ -1,8 +1,6 @@
 source("~/Documents/libs.r")
 # devtools::install('~/git/adcomp/TMB')
 
-MAX_AGE = 50
-N_PAR = 9
 
 library(TMB)
 TMB::compile("code/model.cpp")
@@ -10,28 +8,44 @@ base::dyn.load(TMB::dynlib("code/model"))
 invisible(TMB::config(tape.parallel = 0, DLL = "model"))
 TMB::openmp(1)
 
-N <- 3000
 d <- readRDS(here("data/d_agg.rds"))
-data <- d %>% 
-    mutate(across(everything(), haven::zap_label)) %>%
-    mutate(across(everything(), as.integer)) %>%
-    mutate(J = J - 1) %>%
+N <- nrow(d)
+
+d %>% 
+    mutate(
+        across(where(is.numeric), as.integer),
+        cid = as_numeric(cc),
+        J = J - 1) %>% 
     slice_head(n = N) %>% 
-    as.list()
+    as.list() %>%
+    allot(data)
 
-data$modelmatrix <- model.matrix(~ age , data.frame(age = 0:MAX_AGE))
+data$cid %>% unique() %>% sort %>% allot(cid)
+(N_CC <- length(cid))
 
+# model matrix including countries random effect
+matrix <- crossing(1, 0:MAX_AGE, cid) %>% as.matrix
+data$modelmatrix <- cbind(matrix[, 1:2], make_re_matrix(matrix[, 3]))
+
+(MAX_AGE = max(data$age))
 expect_true(max(data$delta) <= MAX_AGE)
 expect_true(all((data$afs + data$n_N) <= data$age))
 expect_true(all((data$aam + data$n_N) <= data$age))
 expect_true(max(data$J) == 6)
 
 data$prior_base <- c(log(0.001), 0.1) # log normal mean and sd
-data$prior_t <- c(0, 0.1) # mean and sd
+data$prior_t <- c(0, 0.01) # mean and sd
+data$prior_cc <- c(0, 0.01) # mean and sd
 str(data)
 
-init <- list(betas = rnorm(2 * N_PAR, log(0.001), 1))
+init <- list(betas = c(
+    rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
+    rnorm(N_PAR, data$prior_t[1], data$prior_t[2]), 
+    rnorm(N_PAR*N_CC, data$prior_cc[1], data$prior_cc[2])
+))
 str(init)
+
+(N_D <- max(data$delta))
 
 obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
 fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1, maxit = 500))
