@@ -1,8 +1,8 @@
 #include <TMB.hpp>
 
-#define AGE_MAX 50
-#define N_AGE 51
-#define N_D 51 // differences, more than needed
+#define AGE_MAX 65
+#define N_AGE 66
+#define N_D 53
 #define N_PAR 7
 #define N_Q 7
 #define N_CC 37
@@ -52,7 +52,7 @@ struct Kube {
                 pD = expm(tmp);
                 memcpy(&masterD(0) + a*N_CC*N_D*len + c*N_D*len + d*len, &pD(0), sizeof(T)*len);
             }
-            }
+        }
         }
     };
     matrix<T> operator()(int c, int a){
@@ -97,10 +97,10 @@ Type objective_function<Type>::operator() ()
   // Coefs
   PARAMETER_VECTOR(betas);
 
-// base rate | intercept
+  // base rate | intercept
   vector<Type> intercepts = betas(seqN(0, N_PAR));
   prior -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
-  
+
   // age's coeff | time in the hazard
   vector<Type> beta_t = betas(seqN(N_PAR, N_PAR));
   prior -= dnorm(beta_t, prior_t(0), prior_t(1), true).sum();
