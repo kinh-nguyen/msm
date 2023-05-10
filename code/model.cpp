@@ -3,7 +3,7 @@
 #define AGE_MAX 50
 #define N_AGE 51
 #define N_D 51 // differences, more than needed
-#define N_PAR 9
+#define N_PAR 7
 #define N_Q 7
 #define N_CC 37
 
@@ -41,7 +41,7 @@ struct Kube {
             qM(0, 2) = est(r, 1); // marriage from virgin
             qM(1, 2) = est(r, 2); // marriage from debut
             qM(2, {3,4,5}) = est(r, {3,4,5}); // marriage dissolution
-            qM({3,4,5}, 6) = est(r, {6,7,8}); // disso > remarried
+            qM({3,4,5}, 6) = est(r, {6,6,6}); // disso > remarried
             qM(6, {3,4,5}) = est(r, {3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
             qM.diagonal() = T(-1) * qM.rowwise().sum();
             memcpy(&masterQ(0) + a*N_CC*len + c*len, &qM(0), sizeof(T)*len);
@@ -101,17 +101,10 @@ Type objective_function<Type>::operator() ()
   vector<Type> intercepts = betas(seqN(0, N_PAR));
   prior -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
   
-  // Soft-constraints remarried to be the same
-  prior -= dnorm(betas(6) - betas(7), Type(0), Type(0.001), true);
-  prior -= dnorm(betas(6) - betas(8), Type(0), Type(0.001), true);
-
   // age's coeff | time in the hazard
   vector<Type> beta_t = betas(seqN(N_PAR, N_PAR));
   prior -= dnorm(beta_t, prior_t(0), prior_t(1), true).sum();
 
-  // Soft-constraints remarried to be the same
-  prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 7), Type(0), Type(0.001), true);
-  prior -= dnorm(betas(N_PAR + 6) - betas(N_PAR + 8), Type(0), Type(0.001), true);
   // cc's coeff | random intercept
   for (int i = 0; i < N_PAR; i++) {
     vector<Type> f_cc = betas(seqN(N_PAR*2 + i*N_CC, N_CC));

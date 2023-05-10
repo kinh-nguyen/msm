@@ -38,6 +38,7 @@ data$prior_t <- c(0, 0.01) # mean and sd
 data$prior_cc <- c(0, 0.01) # mean and sd
 str(data)
 
+N_PAR = 7
 init <- list(betas = c(
     rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
     rnorm(N_PAR, data$prior_t[1], data$prior_t[2]), 
