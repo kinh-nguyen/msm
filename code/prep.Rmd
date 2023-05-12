@@ -154,7 +154,7 @@ d %>%
 # Too big the dataset, do sequential instead
 sv <- unique(tmp$lab)
 dir.create(here('data/sv'))
-for (i in sv) {
+parallel::mclapply(sv, function(i) {
     cat(i, "...")
     tmp %>%
         filter(lab == i) %>%
@@ -167,22 +167,23 @@ for (i in sv) {
             ndup = if_else(norep & row_number() == n() - 1, 1, ndup),
             ndup = if_else(is.na(ndup), 1, ndup)
         ) %>%
-        uncount(ndup) %>%
+        uncount(ndup) %>% 
         mutate(
             end = 1:n(), start = end - 1,
             Z = name, A = lag(Z, default = "V"),
-            end = if_else(norep & row_number() == n(), value, end),
+            end = if_else(norep & row_number() == n(), value + 1, end),
             # married and dissolution in the same year
             end = if_else(sameYear & row_number() == n(), value + 1, end),
             start = if_else(sameYear & row_number() == n(), value, start)
-        ) %>%
+        ) %>% 
         ungroup() %>%
         count(cc, sex, A, Z, start, end) %>%
         write.csv(here("data/sv", paste0(i, ".csv")))
-}
+}, mc.cores = 6)
 
 new_d <- vroom::vroom(list.files(here('data/sv'), full.names = T), col_select = -1)
 # add tests later if found
+new_d %>% filter(start == end) %>% nrow() %>% mustbe(0)
 new_d %>% count(A, Z) %>% nrow() %>% mustbe(10)
 new_d %>% filter(end < start) %>% nrow() %>% mustbe(0)
 new_d %>% count(cc) %>% nrow() %>% mustbe(37)
