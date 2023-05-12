@@ -1,31 +1,26 @@
 source("~/Documents/libs.r")
 # devtools::install('~/git/adcomp/TMB')
 
-d <- readRDS(here("data/d_agg.rds"))
+d <- vroom::vroom(here("data/new_d.csv"), col_select = -1)
 N <- nrow(d)
 
 d %>% 
     mutate(
-        across(where(is.numeric), as.integer),
-        cid = as_numeric(cc),
-        J = J - 1) %>% 
-    select(-cc) %>% 
+        cid = as_numeric(cc) - 1, 
+        A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
+        Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
+        across(where(is.numeric), as.integer)
+        ) %>% 
+    select(-cc, -sex) %T>% 
+    print %>% 
     as.list() %>%
     allot(data)
 
-(MAX_AGE = max(data$age))
-
 data$cid %>% unique() %>% sort %>% allot(cid)
+data$cid %>% max %>% mustbe(36)
 (N_CC <- length(cid))
 
-# model matrix including countries random effect
-matrix <- crossing(1, 0:MAX_AGE, cid) %>% as.matrix
-data$modelmatrix <- cbind(matrix[, 1:2], make_re_matrix(matrix[, 3]))
-
-expect_true(max(data$delta) <= MAX_AGE)
-expect_true(all((data$afs + data$n_N) <= data$age))
-expect_true(all((data$aam + data$n_N) <= data$age))
-expect_true(max(data$J) == 6)
+str(data)
 
 data$prior_base <- c(log(0.001), 0.1) # log normal mean and sd
 data$prior_t <- c(0, 0.01) # mean and sd
@@ -39,8 +34,6 @@ init <- list(betas = c(
     rnorm(N_PAR*N_CC, data$prior_cc[1], data$prior_cc[2])
 ))
 str(init)
-
-(N_D <- max(data$delta))
 
 library(TMB)
 TMB::compile("code/model.cpp")

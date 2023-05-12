@@ -118,44 +118,73 @@ ooo %>%
     filter(!is.na(marriage_age)) %>% # 225 had afs but not aam, can be done as censored but just removed here
     saveRDS(here('data/cleaned.rds'))
 ```
-```
 
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
-readRDS(here('data/cleaned.rds')) %>%
-    select(lab, afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>% 
+d <- readRDS(here('data/cleaned.rds'))
+library(haven)
+d %>% 
+    select(lab, sex, X = afs, M = marriage_age, age, u = n_union, ms = marital_status) %>%
     mutate(
-        across(where(is.labelled), zap_labels),
+        id = 1:n(),
         cc = substr(lab, 1, 2),
-        ms = if_else(ms == "union", "married", ms),
-        afs = if_else(afs != 0 & aam != 0 & afs >= aam, aam, afs), # remove VX if VM
-        VV = if_else(afs != 0, afs - 1, age - 1),
-        VX = if_else(afs != 0 & afs != aam, afs, -2908),
-        VM = if_else(afs != 0 & aam != 0 & afs == aam, aam, -2908),
-        XM = if_else(afs != 0 & aam != 0 & afs != aam, aam, -2908),
-        XX = case_when(
-            afs != 0 & aam != 0 & afs != aam ~ aam - afs, 
-            afs != 0 & aam == 0 & afs != age ~ age - afs, 
-            otherwise ~ -2908),
-        MM = if_else(aam != 0 &   u == "once" & ms == "married", age - aam, -2908),
-        MJ = if_else(aam != 0 & !(u == "once" & ms == "married"), aam, -2908),
-        delta = if_else(MJ > 0, age - aam + 1, -2908), 
-        J = case_when(
-            delta > 0 & ms == "separated" ~ 4,
-            delta > 0 & ms == "divorced" ~ 5,
-            delta > 0 & ms == "widowed" ~ 6,
-            delta > 0 & ms == "married" ~ 7,
-            otherwise ~ -2908)
-    ) %>% 
-    count(cc, age, afs, aam, VV, VX, XX, XM, VM, MM, MJ, J, delta) %>% 
-    rename(count = n) %T>% # note side effect here
-    allot(tmp) %>% 
-    saveRDS(here::here('data/d_agg.rds'))
+        across(where(is.labelled), zap_labels),
+        # recodeing states
+        X = if_else(X != 0 & M != 0 & X >= M, NA_real_, X), # remove VX if VM
+        ms = if_else(ms %in% c("married", "union") & u == "once", "M", ms),
+        ms = if_else(ms %in% c("married", "union") & u != "once", "R", ms),
+        ms = if_else(X == 0 & M == 0, "V", ms),
+        ms = if_else(X != 0 & M == 0, "X", ms),
+        ms = if_else(ms == "separated", "S", ms),
+        ms = if_else(ms == "divorced", "D", ms),
+        ms = if_else(ms == "widowed", "W", ms),
+        # tricks to make states
+        V = 0, 
+        X = if_else(X == 0, NA_real_, X),
+        M = if_else(M == 0, NA_real_, M),
+        # interval censored
+        norep = if_else(M > 0 & ms != 'M', T, F, missing = F),
+        sameYear = if_else(age == M, T, F, missing = F)
+    ) %>%
+    pivot_longer(c(V, X, M, age)) %>%
+    mutate(name = if_else(name == 'age', ms, name)) %>%
+    allot(tmp)
 
+# Too big the dataset, do sequential instead
+sv <- unique(tmp$lab)
+dir.create(here('data/sv'))
+for (i in sv) {
+    cat(i, "...")
+    tmp %>%
+        filter(lab == i) %>%
+        drop_na(value) %>%
+        group_by(id) %>%
+        mutate(
+            value2 = lead(value),
+            ndup = value2 - value,
+            # > 1 interval censored
+            ndup = if_else(norep & row_number() == n() - 1, 1, ndup),
+            ndup = if_else(is.na(ndup), 1, ndup)
+        ) %>%
+        uncount(ndup) %>%
+        mutate(
+            end = 1:n(), start = end - 1,
+            Z = name, A = lag(Z, default = "V"),
+            end = if_else(norep & row_number() == n(), value, end),
+            # married and dissolution in the same year
+            end = if_else(sameYear & row_number() == n(), value + 1, end),
+            start = if_else(sameYear & row_number() == n(), value, start)
+        ) %>%
+        ungroup() %>%
+        count(cc, sex, A, Z, start, end) %>%
+        write.csv(here("data/sv", paste0(i, ".csv")))
+}
+
+new_d <- vroom::vroom(list.files(here('data/sv'), full.names = T), col_select = -1)
 # add tests later if found
-mustbe <- function(x, y) expect_that(x, testthat::equals(y))
-tmp %>% filter(afs == 0, XX > 0) %>% nrow() %>% mustbe(0)
-tmp %>% filter(XM > 0, afs == 0) %>% nrow() %>% mustbe(0)
-
+new_d %>% count(A, Z) %>% nrow() %>% mustbe(10)
+new_d %>% filter(end < start) %>% nrow() %>% mustbe(0)
+new_d %>% count(cc) %>% nrow() %>% mustbe(37)
+write.csv(new_d, here('data', 'new_d.csv'))
 ```
