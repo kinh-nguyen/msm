@@ -28,11 +28,17 @@ data$prior_cc <- c(0, 0.01) # mean and sd
 str(data)
 
 N_PAR = 7
-init <- list(betas = c(
-    rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
-    rnorm(N_PAR, data$prior_t[1], data$prior_t[2]), 
-    rnorm(N_PAR*N_CC, data$prior_cc[1], data$prior_cc[2])
-))
+init <- list(
+    intercepts = rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
+    beta_t = rnorm(N_PAR, data$prior_t[1], data$prior_t[2]), 
+    cc0 = rep(0, N_CC),
+    cc1 = rep(0, N_CC),
+    cc2 = rep(0, N_CC),
+    cc3 = rep(0, N_CC),
+    cc4 = rep(0, N_CC),
+    cc5 = rep(0, N_CC),
+    cc6 = rep(0, N_CC)
+)
 str(init)
 
 library(TMB)

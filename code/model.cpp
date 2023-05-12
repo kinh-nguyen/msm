@@ -47,34 +47,59 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(prior_t);
   DATA_VECTOR(prior_cc);
 
-  // Coefs
-  PARAMETER_VECTOR(betas);
 
   // base rate | intercept
-  vector<Type> intercepts = betas(seqN(0, N_PAR));
+  PARAMETER_VECTOR(intercepts);
   prior -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
 
   // age's coeff | time in the hazard
-  vector<Type> beta_t = betas(seqN(N_PAR, N_PAR));
+  PARAMETER_VECTOR(beta_t);
   prior -= dnorm(beta_t, prior_t(0), prior_t(1), true).sum();
 
   // cc's coeff | random intercept
-  matrix<Type> ccmat = betas(seqN(N_PAR*2, N_CC*N_PAR)).reshaped(N_CC, N_PAR);
-  for (int i = 0; i < N_PAR; i++) {
-    vector<Type> cci = ccmat.col(i);
-    prior -= dnorm(cci, prior_cc(0), prior_cc(1), true).sum();
-  }
+  PARAMETER_VECTOR(cc0);
+  PARAMETER_VECTOR(cc1);
+  PARAMETER_VECTOR(cc2);
+  PARAMETER_VECTOR(cc3);
+  PARAMETER_VECTOR(cc4);
+  PARAMETER_VECTOR(cc5);
+  PARAMETER_VECTOR(cc6);
+  prior -= dnorm(cc0, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc1, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc2, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc3, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc4, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc5, prior_cc(0), prior_cc(1), true).sum();
+  prior -= dnorm(cc6, prior_cc(0), prior_cc(1), true).sum();
+  matrix<Type> ccmat(N_CC, N_PAR);
+  ccmat.col(0) = cc0;
+  ccmat.col(1) = cc1;
+  ccmat.col(2) = cc2;
+  ccmat.col(3) = cc3;
+  ccmat.col(4) = cc4;
+  ccmat.col(5) = cc5;
+  ccmat.col(6) = cc6;
 
   PQ<Type> KM;
 
+  vector<Type> ll(A.size());
   vector<Type> eta(N_PAR);
   for (int i = 0; i < A.size(); i++) {
     for (int j = 0; j < N_PAR; j++)
       eta[j] = exp(intercepts[j] + beta_t[j]*start[i] + ccmat(cid[i], j));
-    dll -= n[i] * KM(eta, start[i], end[i])(A[i], Z[i]);
+    ll[i] = n[i] * KM(eta, start[i], end[i])(A[i], Z[i]);
   }
-  dll += prior;
-
-  REPORT(betas);
+  REPORT(prior);
+  REPORT(ll);
+  dll += prior - ll.sum();
+  REPORT(intercepts);
+  REPORT(beta_t);
+  REPORT(cc0);
+  REPORT(cc1);
+  REPORT(cc2);
+  REPORT(cc3);
+  REPORT(cc4);
+  REPORT(cc5);
+  REPORT(cc6);
   return dll;
 }
