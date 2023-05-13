@@ -1,110 +1,98 @@
 source("~/Documents/libs.r")
 # devtools::install('~/git/adcomp/TMB')
-
-d <- vroom::vroom(here("data/new_d.csv"), col_select = -1)
-N <- nrow(d)
-
-d %>% 
+vroom::vroom(here("data/new_d.csv"), col_select = -1) %>% 
     mutate(
         cid = as_numeric(cc) - 1, 
         A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
         Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
         across(where(is.numeric), as.integer)
         ) %>% 
-    select(-cc, -sex) %T>% 
-    print %>% 
-    as.list() %>%
-    allot(data)
+    allot(d)
 
-data$cid %>% unique() %>% sort %>% allot(cid)
-data$cid %>% max %>% mustbe(36)
-(N_CC <- length(cid))
-
-str(data)
-
+data <- list()
 data$prior_base <- c(log(0.001), 0.1) # log normal mean and sd
 data$prior_t <- c(0, 0.01) # mean and sd
-data$prior_cc <- c(0, 0.01) # mean and sd
-str(data)
 
 N_PAR = 7
 init <- list(
     intercepts = rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
-    beta_t = rnorm(N_PAR, data$prior_t[1], data$prior_t[2]), 
-    cc0 = rep(0, N_CC),
-    cc1 = rep(0, N_CC),
-    cc2 = rep(0, N_CC),
-    cc3 = rep(0, N_CC),
-    cc4 = rep(0, N_CC),
-    cc5 = rep(0, N_CC),
-    cc6 = rep(0, N_CC)
+    beta_t = rnorm(N_PAR, data$prior_t[1], data$prior_t[2])
 )
 str(init)
 
 library(TMB)
 TMB::compile("code/model.cpp")
-# base::dyn.unload(TMB::dynlib("code/model"))
 base::dyn.load(TMB::dynlib("code/model"))
 invisible(TMB::config(tape.parallel = 0, DLL = "model"))
 TMB::openmp(1)
 
-obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1, maxit = 500))
-rp <- obj$report(obj$env$last.par.best); str(rp)
-p_id <- char(VX, XM, MS, MD, MW, SR, DR, WR)
-p_lb <- char(
-    "Sexual debut", "Marriage", "Separate", "Divorce", "Widow",
-    "Separated>>Remarried", "Divorced>>Remarried", "Widowed>>Remarried"
-)
+cc <- unique(d$cc)
+dir.create(here('fitted'), F)
 
-vis <- function(x, rt = F) {
-    X <- array(rp[[x]], c(7, 7, 50))
-    tibble(
-        age = 1:50,
-        VX = X[1, 2, ],
-        VM = X[1, 3, ],
-        XM = X[2, 3, ],
-        MS = X[3, 4, ],
-        MD = X[3, 5, ],
-        MW = X[3, 6, ],
-        SR = X[4, 7, ],
-        DR = X[5, 7, ],
-        WR = X[6, 7, ],
-    ) %>%
-        pivot_longer(-age) %>%
-        mutate(name = factor(name, levels = char(VX, VM, XM, MS, MD, MW, SR, DR, WR))) %>%
-        allot(o)
-    if (rt) return(o)
-    o %>% ggplot(aes(age, value, color = name)) +
-        geom_line()
+for (k in cc) {
+    for (s in char(male, female)) {
+        cat(k, s, "\n")
+        tdt <- filter(d, cc == k, sex == s) %>%
+            select(A, Z, start, end, n) %>%
+            as.list()
+        data <- modifyList(data, tdt)
+        t0 <- Sys.time()
+        obj <- TMB::MakeADFun(data, init, DLL = "model", silent = TRUE)
+        fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0, maxit = 500))
+        rp <- obj$report(obj$env$last.par.best)
+        save <- modifyList(fit, rp)
+        save$runtime <- Sys.time() - t0
+        saveRDS(save, here("fitted", paste0(k, s, ".rds")))
+    }
 }
 
-vis("KM.masterP") + facet_wrap(~name, scales = "free")
+iso2 <- list.files(here('fitted')) %>% substr(1, 2)
+sex <- list.files(here('fitted')) %>% substr(3, 3)
+betas <- list.files(here('fitted'), full.names = T) %>% 
+    lapply(function(x) {readRDS(x) %$% rbind(intercepts, beta_t)})
+modelmatrix <- as.matrix(expand.grid(1, 0:65)) 
+PQ <- function(pars) {
+    P <- Q <- matrix(0, 7, 7)
+    Q[1, 2] = pars[1]
+    Q[1, 3] = pars[2]
+    Q[2, 3] = pars[3]
+    Q[3, 4:6] = pars[4:6]
+    Q[4:6, 7] = pars[6]
+    Q[7, 4:6] = pars[7]
+    for(i in 1:7) Q[i,i] = -sum(Q[i, ])
+    P = expm::expm(Q)
+    list(P=P, Q=Q)
+}
 
-vis("KM.masterP", 1) %>% 
-pivot_wider(names_from = name, values_from = value) %>% 
-transmute(
-    age = age,
-    pX = VX,
-    pM = (VX * XM) + VM, 
-    pNULL = NA,
-    pS = pM * MS,
-    pD = pM * MD,
-    pW = pM * MW,
-    pSr = pS * SR,
-    pDr = pD * DR,
-    pWr = pW * WR,
+estP <- map_dfr(seq_along(betas), function(z) {
+    eta <- exp(modelmatrix %*% betas[[z]])
+    PQages <- napply(1:nrow(eta), function(x) PQ(eta[x, ]))
+    map_dfr(PQages, function(x) {
+        tibble(
+            VV = x$P[1,1],
+            VX = x$P[1,2],
+            VM = x$P[1,3],
+            XX = x$P[2,2],
+            XM = x$P[2,3],
+            MM = x$P[3,3],
+            MS = x$P[3,4],
+            MD = x$P[3,5],
+            MW = x$P[3,6],
+            Re = x$P[4,7],
+        )}) %>% 
+        mutate(age = 0:65, cc = iso2[z], sex = sex[z])
+})
+
+estP %>% 
+    filter(!(sex == 'f' & age > 49)) %>% 
+    mutate(
+        region = countrycode::countrycode(cc, 'dhs', 'un.regionsub.name'),
+        cc = countrycode::countrycode(cc, 'dhs', 'country.name'),
+        debut = VX, 
+        married = (VX * XM) + VM,
+        divorce = married * MD, 
+        widowed = married * MW, 
+        separated = married * MS, 
+        remarried = married * Re, 
     ) %>% 
-    pivot_longer(-age) %>% 
-    mutate(name = factor(name, 
-        levels = char(pX, pM, pNULL, pS, pD, pW, pSr, pDr, pWr), 
-        labels = char("Debut", "Marriage", "", "Separated|Married", "Divorced|Married", "Widowed|Married", "Remarried|Separated", "Remarried|Divorced", "Remarried|Widowed"), 
-        )) %>% 
-    ggplot(aes(age, value, color = name)) + geom_line() + facet_wrap(~name, scales = 'free') +
-    scale_y_continuous(labels = scales::percent, breaks = scales::pretty_breaks(n = 7)) +
-    theme(
-        legend.position = 'none',
-        panel.grid.minor = element_blank(), panel.grid.major.x = element_blank(), axis.text.y = element_text(size = 5)) +
-    labs(title = "Transition probability in the next year", y = '')
-
-ggsave("fig/prob3000.png", width = 7, height = 4.5)
+    allot(estPP)

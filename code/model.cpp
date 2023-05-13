@@ -2,7 +2,6 @@
 
 #define N_PAR 7
 #define N_Q 7
-#define N_CC 37
 
 using Eigen::seqN;
 
@@ -40,13 +39,10 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(start);
   DATA_IVECTOR(end);
   DATA_VECTOR(n);
-  DATA_IVECTOR(cid);
   
   // priors
   DATA_VECTOR(prior_base);
   DATA_VECTOR(prior_t);
-  DATA_VECTOR(prior_cc);
-
 
   // base rate | intercept
   PARAMETER_VECTOR(intercepts);
@@ -56,50 +52,16 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(beta_t);
   prior -= dnorm(beta_t, prior_t(0), prior_t(1), true).sum();
 
-  // cc's coeff | random intercept
-  PARAMETER_VECTOR(cc0);
-  PARAMETER_VECTOR(cc1);
-  PARAMETER_VECTOR(cc2);
-  PARAMETER_VECTOR(cc3);
-  PARAMETER_VECTOR(cc4);
-  PARAMETER_VECTOR(cc5);
-  PARAMETER_VECTOR(cc6);
-  prior -= dnorm(cc0, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc1, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc2, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc3, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc4, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc5, prior_cc(0), prior_cc(1), true).sum();
-  prior -= dnorm(cc6, prior_cc(0), prior_cc(1), true).sum();
-  matrix<Type> ccmat(N_CC, N_PAR);
-  ccmat.col(0) = cc0;
-  ccmat.col(1) = cc1;
-  ccmat.col(2) = cc2;
-  ccmat.col(3) = cc3;
-  ccmat.col(4) = cc4;
-  ccmat.col(5) = cc5;
-  ccmat.col(6) = cc6;
-
   PQ<Type> KM;
 
-  vector<Type> ll(A.size());
   vector<Type> eta(N_PAR);
   for (int i = 0; i < A.size(); i++) {
     for (int j = 0; j < N_PAR; j++)
-      eta[j] = exp(intercepts[j] + beta_t[j]*start[i] + ccmat(cid[i], j));
-    ll[i] = n[i] * KM(eta, start[i], end[i])(A[i], Z[i]);
+      eta[j] = exp(intercepts[j] + beta_t[j]*start[i]);
+    dll -= n[i] * KM(eta, start[i], end[i])(A[i], Z[i]);
   }
-  REPORT(prior);
-  REPORT(ll);
-  dll += prior - ll.sum();
+  dll += prior;
   REPORT(intercepts);
   REPORT(beta_t);
-  REPORT(cc0);
-  REPORT(cc1);
-  REPORT(cc2);
-  REPORT(cc3);
-  REPORT(cc4);
-  REPORT(cc5);
-  REPORT(cc6);
   return dll;
 }
