@@ -96,3 +96,85 @@ estP %>%
         remarried = married * Re, 
     ) %>% 
     allot(estPP)
+
+ktheme <- theme(
+        panel.grid.minor.y = element_blank(),
+        panel.grid.major.x = element_blank())
+
+estPP %>% 
+    ggplot(aes(age, VV, color = sex)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 2)) +
+    theme(legend.position = c(.9, 1.07)) +
+    labs(title = "Probability of staying virgin", y = '', linetype = "Transition")
+ggsave(here('fig/PVV.pdf'), width = 7, height = 7)
+
+estPP %>% 
+filter(sex == 'm') %>% 
+    select(age, sex, cc, `Debut|Virgin` = VX, `Married|Virgin` = VM, `Married|Debut` = XM) %>% 
+    pivot_longer(4:6) %>% 
+    ggplot(aes(age, value, color = name)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 3)) +
+    theme(legend.position = "bottom") +
+    labs(title = "Probability of sexual debut or married - Male", y = '', color = "Transition") -> PVXVMXM_male
+ggsave(here('fig/PVXVMXM_male.pdf'), PVXVMXM_male, width = 9, height = 7.5)
+  
+estPP %>% 
+filter(sex == 'f') %>% 
+    select(age, sex, cc, `Debut|Virgin` = VX, `Married|Virgin` = VM, `Married|Debut` = XM) %>% 
+    pivot_longer(4:6) %>% 
+    ggplot(aes(age, value, color = name)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 3)) +
+    theme(legend.position = "bottom") +
+    labs(title = "Probability of sexual debut or married - female", y = '', color = "Transition") -> PVXVMXM_female
+ggsave(here('fig/PVXVMXM_female.pdf'), PVXVMXM_female, width = 9, height = 7.5)
+  
+estPP %>% 
+filter(sex == 'm') %>% 
+    select(age, sex, cc, `Separate|Married` = MS, `Divorce|Married` = MD, `Widowed|Married` = MW) %>% 
+    pivot_longer(4:6) %>% 
+    ggplot(aes(age, value, color = name)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 3)) +
+    theme(legend.position = "bottom") +
+    scale_y_continuous(trans = 'log') +
+    labs(title = "Probability of marital dissolution - male", y = '', color = "Transition") -> PMJ_male
+ggsave(here('fig/PMJ_male.pdf'), PMJ_male, width = 9, height = 7.5)
+    
+estPP %>% 
+filter(sex == 'f') %>% 
+    select(age, sex, cc, `Separate|Married` = MS, `Divorce|Married` = MD, `Widowed|Married` = MW) %>% 
+    pivot_longer(4:6) %>% 
+    ggplot(aes(age, value, color = name)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 3)) +
+    theme(legend.position = "bottom") +
+    scale_y_continuous(trans = 'log') +
+    labs(title = "Probability of marital dissolution - female", y = '', color = "Transition") -> PMJ_female
+ggsave(here('fig/PMJ_female.pdf'), PMJ_female, width = 9, height = 7.5)
+    
+estPP %>% 
+    select(age, sex, cc, `Remarried` = Re) %>% 
+    ggplot(aes(age, Remarried, color = sex)) + 
+    geom_line() + 
+    facet_wrap(~cc) +
+    ktheme +
+    guides(color = guide_legend(,direction = 'horizontal', ncol = 2)) +
+    theme(legend.position = "bottom") +
+    scale_y_continuous(trans = 'log') +
+    labs(title = "Probability of remarried from either of the dissolution states", y = '', color = "Sex") -> PR
+ggsave(here('fig/PR.pdf'), PR, width = 9, height = 7.5)
+    
+pdftools::pdf_combine(list.files(here('fig'), "^P.*\\.pdf", full.names = T))
