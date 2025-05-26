@@ -1,0 +1,353 @@
+--- 
+title: "Rate of sexual debut, marriage, and marital dissolutions in Sub-Saharan Africa"
+author:
+  - name: Văn Kính Nguyễn
+    id: vkn
+    email: kinh.nguyen@uni-heidelberg.de
+    affiliation:
+      - ref: 1
+  - name: Jeffrey Imai-Eaton
+    affiliation:
+      - ref: 2
+affiliations: 
+  - id: 1
+    department: Heidelberg Institute for Global Health
+    name: Heidelberg University Hospital
+    city: Heidelberg
+    state: Baden-Würtenburg
+    country: Germanty
+    address: Im Neuenheimer Feld 130/3
+    postcode: 69120
+    url: uni-heidelberg.de
+  - id: 2
+    department: Imperial College London
+    name: Heidelberg University Hospital
+    city: Heidelberg
+    state: Baden-Würtenburg
+    country: Germanty
+    address: Im Neuenheimer Feld 130/3
+    postcode: 69120
+    url: uni-heidelberg.de
+
+execute: 
+  cache: true
+  warning: false
+  error: false
+  include: false
+  echo: false
+
+editor:
+  render-on-save: true
+
+format:
+  elsevier-pdf:
+    journal:
+      name: "medArxiv"
+      formatting: preprint
+      model: 3p
+      layout: twocolumn
+    number-sections: false
+    include-before-body:
+      text: |
+        \linenumbers
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        %\usepackage[affil-it]{authblk}
+        %\renewcommand{\Affilfont}{\footnotesize}
+        \usepackage{hyperref}
+        \hypersetup{colorlinks, linkcolor={blue}, citecolor={blue}, urlcolor={blue}}
+        \usepackage[capitalise,noabbrev]{cleveref}
+        \usepackage[title]{appendix}
+        \usepackage[inline]{enumitem}
+        %\usepackage{paralist}
+        \usepackage{blkarray} % named matrixed
+        \usepackage{lineno}
+        \usepackage{etoolbox}
+        \AtBeginEnvironment{abstract}{\setlength{\parindent}{0pt}}
+        %\usepackage[hpos=0.15\paperwidth,vpos=0.1\paperheight,colormodel=RGB,color={[RGB]{253, 246, 227}}]{draftwatermark}
+        %\SetWatermarkText{draft}
+        %\SetWatermarkScale{1}
+        %\usepackage{xcolor}
+        \definecolor{pageDark}{rgb}{0.992,0.9647,0.8902}
+        \definecolor{textDark}{rgb}{0.396,0.482,0.514}
+        \definecolor{pageLight}{rgb}{0.0,0.1686,0.2117}
+        \definecolor{textLight}{rgb}{0.5137,0.5804,0.5882}
+        \pagecolor{pageDark}
+        \color{textDark} 
+        %\pagecolor{pageLight}
+        %\color{textLight} 
+    # linestretch: 1
+    pagestyle: headings
+    fontsize: 11pt
+    colorlinks: true
+    indent: false
+    keep-tex: true
+
+bibliography: "/Users/knguyen/Documents/zotero.bib"
+latex-clean: false
+fig-dpi: 300
+abstract: > 
+  **Background** 
+  This paper details a continuous-time multistate model designed to analyze
+  transitions through various life course stages, including sexual debut,
+  marriage, marital dissolution (separation, divorce, widowhood), and
+  remarriage. The model incorporates age-dependent transition intensities and
+  allows for the inclusion of other covariates. We discuss the theoretical
+  underpinnings, model specification, calculation of transition matrices, and
+  the likelihood framework, particularly focusing on an approach suitable for
+  panel data where exact transition times for all states may not be observed.
+---
+
+# Background
+
+Tireless efforts in HIV/AIDS research and treatment have led to better life for
+people living with HIV (PLHIV). Treatment is yet still a lifelong process, and
+every year, new infections, while have been subsided since 1996, still amount to
+more than a million cases globally [@unaids2023]. The new infections are
+disproportional distributed among women of young age [@unaids2023], the period
+during which multiple sexual related life events occur including sexual debut,
+marriage, and marriage dissolution.
+
+In the marital status categories, the HIV prevalence has been shown to be
+higher. Remarried individuals form a large portion of the population and have a
+higher-than-average HIV prevalence [@de_walque_association_2012], whereas widows
+and widowers had exceptionally high HIV prevalence [@mcgrath_older_2009]. The
+risk of acquiring HIV increased in remarriage couples [@maphosa_unmasking_2014]
+and was significantly associated with being married or in one of the marriage
+dissolution states [@kimani_marital_2013]. 
+
+Social and cultural reasons could lead to the increasing risk and prevalence in
+those groups. HIV-positive surviving spouses might not want to disclose their
+status and lessen the precautionary measures as children could be expected from
+the new marriages. Widowhood could lead to high-risk partnerships to be formed
+when widowed men and women reconnect to the sexual network
+[@adetunji_hivaids_2001;@lopman_role_2009]. A higher rate of partner acquisition
+could be expected due to polygamous marriage, frequency of remarriage and
+marriage dissolution. Those with multiple marriages have a higher probability of
+HIV infection among women with circumcision spouses [@poulin_inquiry_2011]. A
+widespread cultural practice in sub-Saharan Africa that could also contribute to
+risk of HIV transmission is widow inheritance [@agot_widow_2010].
+
+The population of HIV-positive partners, surviving spouses, and divorcee could
+face more difficulties to to access supporting services. In many African
+countries, divorce is seen as a sign of failure and social ostracism often
+follows which can lead to marginalization. Often lack of education and have
+limited incomes, divorced and widowed women could be more likely to engage in
+transactional sex or multiple concurrent partnerships and unable to negotiate
+safe sex practices with partners. They might also not have access to prevention
+services because they do not have the legal rights required for accessing these
+services without male support. Unaddressed, these individuals would not only
+face a higher risk of life-threatening conditions but also fuels the continuing
+of the epidemic. 
+
+Joint actions by governments and international organizations are needed to
+better understand the gap and address the needs of different marital status
+populations. In order to understand the extends of the resources needed as well
+as potential impacts of programs targeting the population, estimating of the
+life-course transitions between the marital statuses are needed. Improved
+estimates of the transition rates will inform the estimate of the target
+population size and dynamic models for epidemic modelling and assessments.
+
+# Materials & Methods
+
+We used a multistate survival framework to model the rates of transition between
+marital statuses. Multistate models (MSMs) is a robust framework for analyzing
+the movement through a series of discrete states over time by specifying the
+instantaneous risk of moving from state $i$ to state $j$ at time $t$. To
+characterize temporal trends and geographic variation in the rate, we allowed
+the parameters to vary by country and survey years. Changes over time were
+represented by a second-order auto-regressive (AR2). The model was fitted
+separately for male and female.
+
+## Household survey data
+
+Data on age at first sex (AFS), age at marriage (AAM), and current marital
+status were obtained from Demographic and Health Surveys (DHS) in 37 countries.
+Only nationally representative surveys with individual records available for
+analysis were used. For AFS, respondents stated their age at first sexual
+intercourse; valid responses were 'never,' an integer age, or 'at first
+marriage/union,' which was substituted with the reported age at first marriage.
+Respondents also recalled their age at first marriage or union. Recorded current
+marital statuses were: "Never married nor lived in a consensual union," "Legally
+or formally married," "Not legally or formally married but living with a
+man/woman in a consensual union," "Widowed from a marriage or consensual union
+and not remarried or not in a consensual union," "Divorced from a legal or
+formal marriage and not remarried or in a consensual union," "Separated from a
+marriage or consensual union," and "Married or living in a union."
+
+## States transition
+
+We defined seven states of transition from virgin from birth ($V$) to current
+marital status sexually debuted (and not married) ($X$), married or in a union
+($M$), three states of marriage dissolution including separated ($S$), divorced
+($D$), widowed ($W$), and remarried or in a union again ($R$). A remarried event
+is defined if the respondent reported that there had been more than one union
+and currently is married, in a union, or is in one of the three stages of
+marriage dissolution. 
+
+Transitions are unidirectional for initial life stages and allow for cycles in
+later marital statuses: V $\to$ X, V $\to$ M (direct marriage implies debut), X
+$\to$ M, M $\to$ S, M $\to$ D, M $\to$ W, S $\to$ D, S $\to$ R, D $\to$ R, W
+$\to$ R, R $\to$ S, R $\to$ D, R $\to$ W. The states S, D, W, and R can form
+cycles. Furthermore, when the AFS is reported equal or greater than AAM we set
+the transition as the respondent moved from a virgin directly to married. There
+can be as many number of unions as theoretically allowed to traverse the paths
+in those records with more than once unions. However, while marital dissolution
+states are not observed, we assumed if a marriage dissolute within a year after
+married, there was no intermediate states in between, except the current status 
+is remarried.
+
+## Transition Intensities and Probabilities
+
+The instantaneous transition intensity from state $i$ to state $j$ at age $t$,
+given a vector of covariates $\mathbf{X}$, is modeled using a linear predictor
+on the log scale, equivalent to a Gompertz hazards type model [@van2016multi],
+i.e., 
+\begin{equation}\label{eq:eta}
+\lambda_{ij}(t, \mathbf{X}) = \alpha_{ij} + \beta_{ij} t + \sum_k \gamma_{ijk}
+X_k
+\end{equation}
+where $\alpha_{ij}$ is the baseline intensity intercept, $\beta_{ij}$ is
+the age effect, and $\gamma_{ijk}$ are coefficients for other time-constant or
+time-varying covariates $X_k$. The parameters $\lambda_{ij}$ are the
+instantaneous transition rates between the states, which is described with the
+intensity matrix $Q(t, \mathbf{X})$, a square matrix where
+\begin{equation}\label{mat:Q}
+\scriptsize
+Q = 
+\begin{blockarray}{cccccccc}
+V & X & M & S & D & W & R \\
+\begin{block}{(ccccccc)c}
+  q_{11} & \lambda_{12} & \lambda_{13} & 0 & 0 & 0 & 0 & V \\
+  0 & q_{22} & \lambda_{23} & 0 & 0 & 0 & 0 & X \\
+  0 & 0 & q_{33} & \lambda_{34} & \lambda_{35} & \lambda_{36} & 0 & M \\
+  0 & 0 & 0 & q_{44} & 0 & 0 & \lambda_{47} & S \\
+  0 & 0 & 0 & 0 & q_{55} & 0 & \lambda_{57} & D \\
+  0 & 0 & 0 & 0 & 0 & q_{66} & \lambda_{67} & W \\
+  0 & 0 & 0 & \lambda_{74} & \lambda_{75} & \lambda_{76} & q_{77} & R \\
+\end{block}
+\end{blockarray}
+\end{equation}
+The off-diagonal elements $q_{ij}(t, \mathbf{X}) = \lambda_{ij}(t, \mathbf{X})$
+for $i \neq j$, representing the intensity of transition from state $i$ to state
+$j$. The diagonal elements $q_{ii}(t, \mathbf{X}) = - \sum_{j \neq i}
+\lambda_{ij}(t, \mathbf{X})$, representing the negative of the total rate of
+leaving state $i$, e.g., 
+$q_{11}(t) = -(\lambda_{V,SD}(t) + \lambda_{V,M1}(t))$.
+
+The remarried state $R$ is separated from $M$ to model individuals who reported
+having more than once union. While the rate of marital dissolution
+could be different from those who had married only once ($M$) and those had
+remarried ($R$), all the marriage dissolution events were not observed in the
+data. Thus, we set the marital dissolution rates to be the same for both
+marriage and remarried states $M$ and $R$, i.e., $q_{33} = q_{77},\ \lambda_{34}
+= \lambda_{74},\ \lambda_{35} = \lambda_{75},\ \lambda_{36} = \lambda_{76}$. In
+addition, the three remarried rates from either of the three marriage
+dissolution states ($S, D, W$) are only informed by the number of individuals
+who reported having more than once union and currently married --- it is unknown
+from which state the individual had remarried. Thus, we constrained the three
+rates to be equal of the parameters, i.e., $\lambda_{47} = \lambda_{57} =
+\lambda_{67}$.
+
+## Model likelihood
+
+The likelihood is based on individuals' observed histories which includes
+segments of history where the state occupancy is continuously known and segments
+where only the start and end states of an interval are known. 
+Let $t_0$ be the initial age of observation, $t_c$ be the current age at
+observation, $t_d$ be the age at sexual debut, and $t_{m}$ be the age at
+first marriage. 
+The survival probability in state $i$ from $t_a$ to $t_b$ is $\exp(-H_i(t_a,
+t_b, \mathbf{X}))$ [@van2016multi], where 
+\begin{flalign*}
+H_i(t_a, t_b, \mathbf{X}) &= \int_{t_a}^{t_b} q_{ii}(u, \mathbf{X}) du
+%& = \int_{t_a}^{t_b} -\sum_{j \neq i} \lambda_{ij}(u, \mathbf{X}) du
+%&= -\left[ A_i(\mathbf{X})(t_b-t_a) + B_i \frac{t_b^2-t_a^2}{2} \right] \\
+\end{flalign*}
+For currently virgin observations, the individual has remained in state V from
+$t_0$ to $t_c$  with
+$$L_V = \exp(-H_V(t_0, t_c, \mathbf{X})).$$
+Those made sexual debut at $t_d$, the path is then V($t_0$) $\to$ V($t_d^-$)
+$\to$ X($t_d$) $\to$ X($t_c$) with the likelihood contribution as
+\begin{align*}
+L_{X} = & \exp(-H_V(t_0, t_d, \mathbf{X})) \times \lambda_{V,X}(t_d, \mathbf{X}) \\
+        \times & \exp(-H_{X}(t_d, t_c, \mathbf{X})).
+\end{align*}
+Those are currently in their first marriage at $t_c$, there are two
+sub-paths: who made sexual debut before married with transition V $\to$ X $\to$
+M ($t_d < t_{m}$) has 
+\begin{align*}
+L_{M}^{(1)} & = \exp(-H_V(t_0, t_d, \mathbf{X})) \times \lambda_{V,X}(t_d,
+\mathbf{X}) \\
+& \times \exp(-H_{X}(t_d, t_{m}, \mathbf{X})) \times \lambda_{X,M}(t_{m}, \mathbf{X}) \\
+& \times \exp(-H_{M}(t_{m}, t_c, \mathbf{X})),
+\end{align*}
+whereas those have $t_d = t_{m}$ or unknown $t_d$ are assumed transits V $\to$
+M has
+\begin{align*}
+L_{M}^{(2)} & = \exp(-H_V(t_0, t_{m}, \mathbf{X})) \times \lambda_{V,M}(t_{M}, \mathbf{X}) \\
+  & \times \exp(-H_{M}(t_{m}, t_c, \mathbf{X})).
+\end{align*}
+For those who are currently separated (S), divorced (D), widowed (W), or
+remarried (R) at $t_c$, there are two phases: likelihood of reaching M at
+$t_{m}$ either $L_{M1}^{(1)}$ or $L_{M1}^{(2)}$ 
+\begin{align*}
+L_{M}^{(1)} = & \exp(-H_V(t_0, t_d, \mathbf{X})) \lambda_{V,X}(t_d, \mathbf{X})  \\
+& \exp(-H_{X}(t_d, t_{m}, \mathbf{X})) \lambda_{X,M}(t_{m}, \mathbf{X}).\\
+L_{M}^{(2)} = & \exp(-H_V(t_0, t_m, \mathbf{X})) \lambda_{V,M}(t_m, \mathbf{X}).
+\end{align*}
+and likelihood of being in state $C \in \{S, D, W, R\}$ at $t_c$, given in M
+at $t_{m}$. 
+$$L_C = L_{M}^{(*)} \times (P(t_{m}, t_c, \mathbf{X}))_{M, C}$$
+where $P(\cdot)_{i,j}$ an element from the probability transition matrix P-matrix.
+The term $P$ accounts for all possible sequences of transitions that could occur
+between $t_m$ and $t_{c}$ starting in state M and ending in state C
+[@van2016multi;@jackson2022].
+
+The P-matrix contains elements $p_{ij}(t_1, t_2, \mathbf{X})$ representing the
+probability that an individual in state $i$ at time $t_1$ will be in state $j$
+at time $t_2$. The matrix is computed by solving the differential equations:
+$$
+\frac{d}{dt} P(t_1, t, \mathbf{X}) = P(t_1, t, \mathbf{X}) Q(t, \mathbf{X})
+$$
+with the initial condition $P(t_1, t_1, \mathbf{X}) = \mathbf{I}$ 
+to obtain $P(t_1, t_2, \mathbf{X})$.
+When $Q(t, \mathbf{X})$ is
+constant over the interval $[t_1, t_2]$, then $P(t_1, t_2, \mathbf{X}) =
+\text{expm}(Q \cdot (t_2 - t_1))$, where
+`expm` is the matrix exponential [@van2016multi].
+Here, since $Q(t, \mathbf{X})$ is age-dependent, $P(t_1, t_2, \mathbf{X})$ is
+computed by dividing the interval $[t_1, t_2]$ into small subintervals $\Delta
+t_k$ within which $Q(t_k, \mathbf{X})$ is assumed constant. In particular,
+$$ P(t_1, t_2, \mathbf{X}) \approx \prod_{k} \text{expm}(Q(t_k, \mathbf{X})
+\cdot \Delta t_k)$$
+Here, we use $\Delta t_k = 1$ year, and $Q(t_k, \mathbf{X})$ is
+evaluated at the start of the year $t_k$.
+
+## Computational
+
+Calculating the matrix exponential is an expensive operation
+[@molerNineteenDubiousWays2003], thus, for each parameter set, we pre-computed
+the values for all the unique combinations of individual profile and only
+queried the values during the likelihood calculation. Since there were over a
+million individual records, to reduce the size of the data for computational
+purposes, the standard time-split data format (each row an episode) was not used
+but indicators for the likelihood's terms in \cref{eq_likelihood} were
+calculated for each individual (each row an individual). Furthermore,
+individuals with similar life-course were further aggregated to group in which
+the group counts was used to weight the likelihood in \cref{eq_likelihood}, thus
+reducing the number of unique calculation of the likelihood.
+
+The model and likelihood calculation were implemented with Template Model
+Builder which can be accessed on Github's repository
+[kinh-nguyen/multistage]{https://github.com/kinh-nguyen/multistage}. Parameter
+estimate was done with empirical Bayes. The priors were chosen to shrink the
+regression coefficients towards zero when they were only weakly informed by the
+data. In particular, $\beta_{0,rs} \sim N(0, 0.5)$, $\beta_{1, rs}\sim N(0,
+0.1)$ and $c_(\text{country})\sim N(0, 0.1)$.  We computed posterior medians and
+95\% credible intervals (95\% CI) of the outcomes of interests, including the
+rate, transition probability, and hazard by ages, using posterior samples of
+3000 parameters.
+
+# Results
