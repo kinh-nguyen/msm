@@ -11,7 +11,7 @@ always_allow_html: true
 
 ```{r setup, include=F}
 here::i_am("code/prep.Rmd")
-source('~/Documents/libs.r')
+library(ktools)
 library(forcats)
 set.seed(1)
 ```
@@ -129,8 +129,9 @@ d %>%
     mutate(
         id = 1:n(),
         cc = substr(lab, 1, 2),
+        sv = substr(lab, 3, 6),
         across(where(is.labelled), zap_labels),
-        # recodeing states
+        # recoding states
         X = if_else(X != 0 & M != 0 & X >= M, NA_real_, X), # remove VX if VM
         ms = if_else(ms %in% c("married", "union") & u == "once", "M", ms),
         ms = if_else(ms %in% c("married", "union") & u != "once", "R", ms),
@@ -149,11 +150,12 @@ d %>%
     ) %>%
     pivot_longer(c(V, X, M, age)) %>%
     mutate(name = if_else(name == 'age', ms, name)) %>%
-    allot(tmp)
-
-# Too big the dataset, do sequential instead
+allot(tmp)
+ 
+# Too big the dataset, do sequential insteads
 sv <- unique(tmp$lab)
 dir.create(here('data/sv'))
+
 parallel::mclapply(sv, function(i) {
     cat(i, "...")
     tmp %>%
@@ -177,9 +179,10 @@ parallel::mclapply(sv, function(i) {
             start = if_else(sameYear & row_number() == n(), value, start)
         ) %>% 
         ungroup() %>%
-        count(cc, sex, A, Z, start, end) %>%
+        filter(!(!norep & is.na(value2))) %>% # current age forward - not observed yet
+        count(cc, sv, A, Z, start, end) %>%
         write.csv(here("data/sv", paste0(i, ".csv")))
-}, mc.cores = 6)
+    }, mc.cores = 6)
 
 new_d <- vroom::vroom(list.files(here('data/sv'), full.names = T), col_select = -1)
 # add tests later if found
