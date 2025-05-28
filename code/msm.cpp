@@ -31,8 +31,7 @@ struct PQ {
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
-  Type dll = 0.0;
-  Type prior = 0.0;
+  parallel_accumulator<Type> dll(this);
 
   // data
   DATA_IVECTOR(A);
@@ -47,7 +46,7 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(prior_base);
 
   PARAMETER_VECTOR(intercepts);
-  prior -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
+  dll -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
 
   // Age ARk
   PARAMETER_VECTOR(pacf_vec); // length 2 * N_PAR
@@ -61,15 +60,14 @@ Type objective_function<Type>::operator() ()
 
   PQ<Type> KM;
   vector<Type> eta(N_PAR);
-  vector<Type> ll(A.size());
 
   for (int i = 0; i < A.size(); i++) {
     for (int j = 0; j < N_PAR; j++) 
       eta[j] = exp(intercepts[j] + age_sm(j * n_age + start[i]));
     if (fit[i] == 0) 
-      ll[i] = n[i] * KM(eta, true, true)(A[i], Z[i]); 
+      dll -= n[i] * KM(eta, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
-      ll[i] = n[i] * KM(eta, true, false)(A[i], Z[i]); 
+      dll -= n[i] * KM(eta, true, false)(A[i], Z[i]); 
     if (fit[i] == 2) {
       matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = start[i]; t < end[i]; t++)
@@ -78,24 +76,24 @@ Type objective_function<Type>::operator() ()
           eta[j] = exp(intercepts[j] + age_sm(j * n_age + t));
         cumP = cumP * KM(eta, false, false);
       }
-      ll[i] = n[i] * log(cumP(A[i], Z[i]));
+      dll -= n[i] * log(cumP(A[i], Z[i]));
     } 
   }
-  dll -= ll.sum();
-  dll += prior;
-  REPORT(intercepts);
-  REPORT(age_sm);
-  REPORT(ll);
-  // Convert list of matrices to 3D arrays for TMB reporting
-  array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
-  for (int s = 0; s < n_age; ++s) {
-    vector<Type> eta_rep(N_PAR);
-    for (int j = 0; j < N_PAR; j++)
-      eta_rep[j] = exp(intercepts[j] + age_sm(j * n_age + s));
-    qM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, true).data()).reshaped(N_Q * N_Q, 1);
-    pM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, false).data()).reshaped(N_Q * N_Q, 1);
+  
+  SIMULATE {
+    // Convert list of matrices to 3D arrays for TMB reporting
+    array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
+    for (int s = 0; s < n_age; ++s) {
+      vector<Type> eta_rep(N_PAR);
+      for (int j = 0; j < N_PAR; j++)
+        eta_rep[j] = exp(intercepts[j] + age_sm(j * n_age + s));
+      qM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, true).data()).reshaped(N_Q * N_Q, 1);
+      pM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, false).data()).reshaped(N_Q * N_Q, 1);
+    }
+    REPORT(qM_rep);
+    REPORT(pM_rep);
+    REPORT(intercepts);
+    REPORT(age_sm);
   }
-  REPORT(qM_rep);
-  REPORT(pM_rep);
   return dll;
 }
