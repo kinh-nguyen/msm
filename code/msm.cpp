@@ -41,7 +41,10 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
-  
+  // for padding non-data 
+  DATA_VECTOR(age_dv);
+  DATA_IVECTOR(minage);
+  DATA_IVECTOR(n_epis);
   // priors
   DATA_VECTOR(prior_base);
 
@@ -51,11 +54,15 @@ Type objective_function<Type>::operator() ()
   // Age ARk
   PARAMETER_VECTOR(pacf_vec); // length 2 * N_PAR
   PARAMETER_VECTOR(age_sm); // length N_PAR * n_age (n_age = 50)
+  int pid = 0, did = 0;
   for (int i = 0; i < N_PAR; i++) {
-    vector<Type> age_sm_ = age_sm(seqN(i * n_age, n_age));
+    vector<Type> age_sm_ = age_sm(seqN(pid, n_epis[i]));
     vector<Type> pacf_ = pacf_vec(seqN(i * 2, 2));
     dll -= dnorm(age_sm_[0], Type(0.0), Type(0.001), true); 
     dll += ktools::AR2ll(pacf_, age_sm_);
+    age_dv(seqN(did + minage[i], n_epis[i])) = age_sm_; // "padding" with zeros
+    did += n_age; // advance to next transition in padded vector
+    pid += n_epis[i]; // advance to next parameter in estimated parameter vector
   }
 
   PQ<Type> KM;
@@ -63,7 +70,7 @@ Type objective_function<Type>::operator() ()
 
   for (int i = 0; i < A.size(); i++) {
     for (int j = 0; j < N_PAR; j++) 
-      eta[j] = exp(intercepts[j] + age_sm(j * n_age + start[i]));
+      eta[j] = exp(intercepts[j] + age_dv(j * n_age + start[i]));
     if (fit[i] == 0) 
       dll -= n[i] * KM(eta, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
@@ -73,7 +80,7 @@ Type objective_function<Type>::operator() ()
       for (int t = start[i]; t < end[i]; t++)
       {
         for (int j = 0; j < N_PAR; j++) 
-          eta[j] = exp(intercepts[j] + age_sm(j * n_age + t));
+          eta[j] = exp(intercepts[j] + age_dv(j * n_age + t));
         cumP = cumP * KM(eta, false, false);
       }
       dll -= n[i] * log(cumP(A[i], Z[i]));
@@ -86,13 +93,14 @@ Type objective_function<Type>::operator() ()
     for (int s = 0; s < n_age; ++s) {
       vector<Type> eta_rep(N_PAR);
       for (int j = 0; j < N_PAR; j++)
-        eta_rep[j] = exp(intercepts[j] + age_sm(j * n_age + s));
+        eta_rep[j] = exp(intercepts[j] + age_dv(j * n_age + s));
       qM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, true).data()).reshaped(N_Q * N_Q, 1);
       pM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, false).data()).reshaped(N_Q * N_Q, 1);
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
     REPORT(intercepts);
+    REPORT(age_dv);
     REPORT(age_sm);
   }
   return dll;
