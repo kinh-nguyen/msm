@@ -51,14 +51,15 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(intercepts);
   dll -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
 
-  // Age AR(2) model
-  PARAMETER_VECTOR(pacf_vec); // length 2 * N_PAR
-  PARAMETER_VECTOR(age_sm); // length N_PAR * n_age (n_age = 50)
+  // Age AR(1) model
+  PARAMETER_VECTOR(pacf_vec); // length 1 * N_PAR
+  PARAMETER_VECTOR(age_sm); // length depends on minage and n_epis
+  dll -= dnorm(pacf_vec, Type(0), Type(1), true).sum();
   int pid = 0, did = 0;
   for (int i = 0; i < N_PAR; i++) {
+    Type phi = 2. * exp(pacf_vec[i]) / (1. + exp(pacf_vec[i])) - 1.;
     vector<Type> age_sm_ = age_sm(seqN(pid, n_epis[i]));
-    vector<Type> pacf_ = pacf_vec(seqN(i * 2, 2));
-    dll += ktools::AR2ll(pacf_, age_sm_);
+    dll += density::AR1(phi)(age_sm_);
     age_dv(seqN(did + minage[i], n_epis[i])) = age_sm_; // "padding" with zeros
     did += n_age; // advance to next transition in padded vector
     pid += n_epis[i]; // advance to next parameter in estimated parameter vector
@@ -87,18 +88,23 @@ Type objective_function<Type>::operator() ()
   }
   
   SIMULATE {
-    // Convert list of matrices to 3D arrays for TMB reporting
     array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
     for (int s = 0; s < n_age; ++s) {
       vector<Type> eta_rep(N_PAR);
       for (int j = 0; j < N_PAR; j++)
         eta_rep[j] = exp(intercepts[j] + age_dv(j * n_age + s));
-      qM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, true).data()).reshaped(N_Q * N_Q, 1);
-      pM_rep.col(s) = Eigen::Map<Matrix<Type, N_Q, N_Q> >(KM(eta_rep, false, false).data()).reshaped(N_Q * N_Q, 1);
+      matrix<Type> qM_mat = KM(eta_rep, false, true);
+      matrix<Type> pM_mat = KM(eta_rep, false, false);
+      for (int i = 0; i < N_Q; ++i)
+        for (int j = 0; j < N_Q; ++j) {
+          qM_rep(i, j, s) = qM_mat(i, j);
+          pM_rep(i, j, s) = pM_mat(i, j);
+        }
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
     REPORT(intercepts);
+    REPORT(pacf_vec);
     REPORT(age_dv);
     REPORT(age_sm);
   }

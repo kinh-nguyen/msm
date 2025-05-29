@@ -339,4 +339,13 @@ Type AR2ll(vector<Type> pacf_vec, vector<Type> x_sm) {
   return dll;
 }
 
+template<class Type>
+Type AR1ll(Type pacf, vector<Type> x_sm) {
+  Type dll = 0;
+  dll += dnorm(pacf, Type(0), Type(1), true);
+  Type phi = 2. * exp(pacf) / (1. + exp(pacf)) - 1.;
+  dll += density::AR1(phi)(x_sm);
+  return dll;
+}
+
 } // End namespace

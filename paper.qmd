@@ -423,7 +423,7 @@ data <- modifyList(data, as.list(tdt))
 
 init <- list(
     intercepts = rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
-    pacf_vec = rep(c(1, 0), N_PAR),
+    pacf_vec = rep(0, N_PAR),
     age_sm = age_pv
 )
 library(TMB)
