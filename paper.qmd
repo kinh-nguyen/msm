@@ -383,26 +383,35 @@ d %>%
   )  %>% 
 allot(d1)
 N_PAR = 7
+fit_ct = "MW"
+fitdt <- filter(d1, sex == 'female', cc == fit_ct) %>% 
+  filter(cc == fit_ct, sex == 'female') %>% 
+  group_by(cc, sex, A, Z, start, end, fit) %>%
+  summarise(n = sum(n)) %>% # remove surveys effects
+  ungroup()
 
+tdt <- fitdt %>%
+  select(A, Z, start, end, n, fit)
+```
+
+```{r, modelfit}
 data <- list()
 data$prior_base <- c(0, 2.5) # log normal mean and sd
 data$prior_t <- c(0, 2.5) # mean and sd
 
-tdt <- filter(d1, sex == 'female', cc == 'ZA') %>% 
-  select(A, Z, start, end, n, fit)
-
 data$n_age <- max(tdt$end) + 1 # include zero
 
 # compute the length of age_sm
-tdt %>% 
-group_by(A,Z) %>% 
-reframe(
-  minage = min(start),
-  maxage = max(start),
-  nepis = maxage - minage + 1
-) %>% 
-filter(A != Z) %>% 
-arrange(A, Z) %>% 
+tdt %>%
+  mutate(maxage = max(end)) %>% # although there is no e.g. 50-51, but can be 20-51 jump
+  group_by(A, Z) %>%
+  reframe(
+    minage = min(start),
+    maxage = max(maxage),
+    nepis = maxage - minage + 1
+  ) %>%
+  filter(A != Z) %>%
+  arrange(A, Z) %>%
 allot(exist_age)
 
 age_dv = rep(0, N_PAR * data$n_age)
@@ -425,12 +434,12 @@ obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = TRUE)
 sml <- obj$simulate() 
 fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1))
 rp <- obj$simulate(obj$env$last.par.best)
-dir.create(here('fit'))
-saveRDS(rp, here('fit/test.rds'))
+dir.create(here('fit'), showWarnings = FALSE)
+saveRDS(rp, here('fit/testMW.rds'))
 ```
 
 ```{r, loadResult}
-rp <- readRDS(here('fit/test.rds'))
+rp <- readRDS(here('fit/testMW.rds'))
 P_yearly = rp$pM_rep
 pe = tibble(
   start = 0:51,

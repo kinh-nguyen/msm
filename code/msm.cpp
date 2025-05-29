@@ -51,14 +51,13 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(intercepts);
   dll -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
 
-  // Age ARk
+  // Age AR(2) model
   PARAMETER_VECTOR(pacf_vec); // length 2 * N_PAR
   PARAMETER_VECTOR(age_sm); // length N_PAR * n_age (n_age = 50)
   int pid = 0, did = 0;
   for (int i = 0; i < N_PAR; i++) {
     vector<Type> age_sm_ = age_sm(seqN(pid, n_epis[i]));
     vector<Type> pacf_ = pacf_vec(seqN(i * 2, 2));
-    dll -= dnorm(age_sm_[0], Type(0.0), Type(0.001), true); 
     dll += ktools::AR2ll(pacf_, age_sm_);
     age_dv(seqN(did + minage[i], n_epis[i])) = age_sm_; // "padding" with zeros
     did += n_age; // advance to next transition in padded vector
