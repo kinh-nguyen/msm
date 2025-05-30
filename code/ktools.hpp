@@ -348,4 +348,15 @@ Type AR1ll(Type pacf, vector<Type> x_sm) {
   return dll;
 }
 
+template <class Type>
+Type rw1_nll(vector<Type> x, Type sigma, Type mu=0, Type sd = 0.5, bool log_sd_input=true) {
+  Type nll = 0, n = x.size();
+  if (log_sd_input) sigma = exp(sigma);
+  nll -= dnorm(sigma, mu, sd, true) + log(sigma);
+  for (int i = 1; i < n; ++i) 
+    nll -= dnorm(x(i), x(i-1), sigma, true);
+  nll -= dnorm(x.sum(), Type(0.0), Type(0.001) * n, true); 
+  return nll;
+}
+
 } // End namespace

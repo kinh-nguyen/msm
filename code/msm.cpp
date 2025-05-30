@@ -5,6 +5,7 @@
 #define N_Q 7
 
 using Eigen::seqN;
+using ktools::rw1_nll;
 
 template <class T> 
 struct PQ {
@@ -51,15 +52,14 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(intercepts);
   dll -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
 
-  // Age AR(1) model
-  PARAMETER_VECTOR(pacf_vec); // length 1 * N_PAR
+  // Age RW(1) model
+  PARAMETER(log_sigma_rw1); // share variance across transitions
   PARAMETER_VECTOR(age_sm); // length depends on minage and n_epis
-  dll -= dnorm(pacf_vec, Type(0), Type(1), true).sum();
+
   int pid = 0, did = 0;
   for (int i = 0; i < N_PAR; i++) {
-    Type phi = 2. * exp(pacf_vec[i]) / (1. + exp(pacf_vec[i])) - 1.;
     vector<Type> age_sm_ = age_sm(seqN(pid, n_epis[i]));
-    dll += density::AR1(phi)(age_sm_);
+    dll += rw1_nll(age_sm_, log_sigma_rw1, Type(0.0), Type(0.5), true);
     age_dv(seqN(did + minage[i], n_epis[i])) = age_sm_; // "padding" with zeros
     did += n_age; // advance to next transition in padded vector
     pid += n_epis[i]; // advance to next parameter in estimated parameter vector
@@ -104,7 +104,7 @@ Type objective_function<Type>::operator() ()
     REPORT(qM_rep);
     REPORT(pM_rep);
     REPORT(intercepts);
-    REPORT(pacf_vec);
+    REPORT(log_sigma_rw1);
     REPORT(age_dv);
     REPORT(age_sm);
   }
