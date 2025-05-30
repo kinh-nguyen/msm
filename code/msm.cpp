@@ -2,6 +2,7 @@
 #include "ktools.hpp"
 
 #define N_PAR 7
+#define A_REF 20 // referenced age 20
 #define N_Q 7
 
 using Eigen::seqN;
@@ -42,10 +43,14 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
+
   // for padding non-data 
-  DATA_VECTOR(age_dv);
+  DATA_IVECTOR(len_dv);
+  DATA_IVECTOR(len_lv);
+  DATA_IVECTOR(len_pv);
   DATA_IVECTOR(minage);
-  DATA_IVECTOR(n_epis);
+  DATA_IVECTOR(maxage);
+  
   // priors
   DATA_VECTOR(prior_base);
 
@@ -54,15 +59,24 @@ Type objective_function<Type>::operator() ()
 
   // Age RW(1) model
   PARAMETER(log_sigma_rw1); // share variance across transitions
-  PARAMETER_VECTOR(age_sm); // length depends on minage and n_epis
+  PARAMETER_VECTOR(age_sm); // length = sum(len_pv)
+
+  vector<Type> age_dv(len_dv.sum());
+  age_dv.setZero(); 
 
   int pid = 0, did = 0;
   for (int i = 0; i < N_PAR; i++) {
-    vector<Type> age_sm_ = age_sm(seqN(pid, n_epis[i]));
-    dll += rw1_nll(age_sm_, log_sigma_rw1, Type(0.0), Type(0.5), true);
-    age_dv(seqN(did + minage[i], n_epis[i])) = age_sm_; // "padding" with zeros
-    did += n_age; // advance to next transition in padded vector
-    pid += n_epis[i]; // advance to next parameter in estimated parameter vector
+    vector<Type> age_pv = age_sm(seqN(pid, len_pv[i]));
+    vector<Type> age_lv(len_lv[i]);
+    age_lv.setZero(); 
+    int s1 = A_REF - minage[i]; 
+    int s2 = maxage[i] - A_REF; 
+    age_lv(seqN(0, s1)) = age_pv(seqN(0, s1)); // left of A_REF
+    age_lv(seqN(s1 + 1, s2)) = age_pv(seqN(s1, s2)); // right of A_REF
+    age_dv(seqN(did + minage[i], len_lv[i])) = age_lv; // store for linear predictor
+    dll += rw1_nll(age_lv, log_sigma_rw1, Type(0.0), Type(0.5), true, false);
+    pid += len_pv[i]; 
+    did += len_dv[i]; 
   }
 
   PQ<Type> KM;

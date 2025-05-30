@@ -404,27 +404,27 @@ data$n_age <- max(tdt$end) + 1 # include zero
 # compute the length of age_sm
 tdt %>%
   mutate(maxage = max(end)) %>% # although there is no e.g. 50-51, but can be 20-51 jump
+  filter(A != Z) %>%
   group_by(A, Z) %>%
+  arrange(A, Z) %>%
   reframe(
     minage = min(start),
     maxage = max(maxage),
-    nepis = maxage - minage + 1
-  ) %>%
-  filter(A != Z) %>%
-  arrange(A, Z) %>%
+    len_dv = maxage + 1, # include zero
+    len_lv = maxage - minage + 1, # include zero reference
+    len_pv = maxage - minage, # exclude reference age 20
+  ) %>% 
+  select(minage, maxage, starts_with('len_')) %>% 
 allot(exist_age)
+exist_age
 
-age_dv = rep(0, N_PAR * data$n_age)
-age_pv = rep(1, sum(exist_age$nepis))
-data$age_dv = age_dv
-data$minage = exist_age$minage
-data$n_epis = exist_age$nepis
+data <- modifyList(data, as.list(exist_age))
 data <- modifyList(data, as.list(tdt))
 
 init <- list(
     intercepts = rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
     log_sigma_rw1 = log(1), 
-    age_sm = age_pv
+    age_sm = rep(1, sum(exist_age$len_pv)) 
 )
 library(TMB)
 TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
