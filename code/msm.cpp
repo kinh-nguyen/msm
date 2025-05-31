@@ -2,11 +2,9 @@
 #include "ktools.hpp"
 
 #define N_PAR 7
-#define A_REF 20 // referenced age 20
 #define N_Q 7
 
 using Eigen::seqN;
-using ktools::rw1_nll;
 
 template <class T> 
 struct PQ {
@@ -14,21 +12,33 @@ struct PQ {
         qM = matrix<T>(N_Q, N_Q),
         pM = matrix<T>(N_Q, N_Q);
     PQ () {};
-    matrix<T> operator() (vector<T> eta, bool isLog = true, bool isQ = false) {
+    matrix<T> operator() (vector<T> q_rs, bool isLog = true, bool isQ = false) {
       qM.setZero(); pM.setZero();
-      qM(0, 1) = eta(0); // debut
-      qM(0, 2) = eta(1); // marriage from virgin
-      qM(1, 2) = eta(2); // marriage from debut
-      qM(2, {3,4,5}) = eta({3,4,5}); // marriage dissolution
-      qM({3,4,5}, 6) = eta({6,6,6}); // disso > remarried
-      qM(6, {3,4,5}) = eta({3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
+      qM(0, 1) = q_rs(0); // debut
+      qM(0, 2) = q_rs(1); // marriage from virgin
+      qM(1, 2) = q_rs(2); // marriage from debut
+      qM(2, {3,4,5}) = q_rs({3,4,5}); // marriage dissolution
+      qM({3,4,5}, 6) = q_rs({6,6,6}); // disso > remarried
+      qM(6, {3,4,5}) = q_rs({3,4,5}); // remarried > disso = married > disso, we could add a(three) scaling parameter as well?
       qM.diagonal() = T(-1) * qM.rowwise().sum();
       if (isQ)
         return isLog ? qM.array().log().matrix() : qM;
-      pM = expm(qM);
+      pM = atomic::expm(qM);
       return isLog ? pM.array().log().matrix() : pM;
     };
 };
+
+// Log-logistic baseline hazard function where
+// t is time, exp_b0 = alpha, b1 is beta > 0
+template <class Type>
+Type LLGx(Type t, Type exp_b0, Type b1) {
+  if (t == 0.0) return Type(0.0); 
+  Type 
+    t_pow_b1 = pow(t, b1),
+    numerator = exp_b0 * b1 * t_pow_b1 / t,
+    denominator = Type(1.0) + exp_b0 * t_pow_b1;
+  return numerator / denominator;
+}
 
 template<class Type>
 Type objective_function<Type>::operator() ()
@@ -44,61 +54,45 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
 
-  // for padding non-data 
-  DATA_IVECTOR(len_dv);
-  DATA_IVECTOR(len_lv);
-  DATA_IVECTOR(len_pv);
-  DATA_IVECTOR(minage);
-  DATA_IVECTOR(maxage);
-  
   // priors
   DATA_VECTOR(prior_base);
 
-  PARAMETER_VECTOR(intercepts);
-  dll -= dnorm(intercepts, prior_base(0), prior_base(1), true).sum();
+  // log-logistic hazard model
+  PARAMETER_VECTOR(b0);
+  dll -= dnorm(b0, prior_base(0), prior_base(1), true).sum();
+  vector<Type> exp_b0 = exp(b0);
 
-  // Age RW(1) model
-  PARAMETER(log_sigma_rw1); // share variance across transitions
-  PARAMETER_VECTOR(age_sm); // length = sum(len_pv)
-
-  vector<Type> age_dv(len_dv.sum());
-  age_dv.setZero(); 
-
-  int pid = 0, did = 0;
-  for (int i = 0; i < N_PAR; i++) {
-    vector<Type> age_pv = age_sm(seqN(pid, len_pv[i]));
-    vector<Type> age_lv(len_lv[i]);
-    age_lv.setZero(); 
-    int s1 = A_REF - minage[i]; 
-    int s2 = maxage[i] - A_REF; 
-    age_lv(seqN(0, s1)) = age_pv(seqN(0, s1)); // left of A_REF
-    age_lv(seqN(s1 + 1, s2)) = age_pv(seqN(s1, s2)); // right of A_REF
-    age_dv(seqN(did + minage[i], len_lv[i])) = age_lv; // store for linear predictor
-    dll += rw1_nll(age_lv, log_sigma_rw1, Type(0.0), Type(0.5), true, false);
-    pid += len_pv[i]; 
-    did += len_dv[i]; 
-  }
+  PARAMETER_VECTOR(log_b1)
+  vector<Type> b1 = exp(log_b1);
+  dll -= dnorm(b1, Type(0), Type(1), true).sum() + log_b1.sum(); 
 
   PQ<Type> KM;
-  vector<Type> eta(N_PAR);
+  vector<Type> q_rs(N_PAR);
+
+  // Add vector to track individual log-likelihoods
+  vector<Type> indiv_ll(A.size());
+  indiv_ll.setZero();
 
   for (int i = 0; i < A.size(); i++) {
-    for (int j = 0; j < N_PAR; j++) 
-      eta[j] = exp(intercepts[j] + age_dv(j * n_age + start[i]));
+    Type ll = 0;
+    for (int j = 0; j < N_PAR; j++)
+      q_rs[j] = LLGx(Type(start[i]), exp_b0[j], b1[j]); 
     if (fit[i] == 0) 
-      dll -= n[i] * KM(eta, true, true)(A[i], Z[i]); 
+      ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
-      dll -= n[i] * KM(eta, true, false)(A[i], Z[i]); 
-    if (fit[i] == 2) {
+      ll = -n[i] * KM(q_rs, true, false)(A[i], Z[i]); 
+    else if (fit[i] == 2) {
       matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = start[i]; t < end[i]; t++)
       {
         for (int j = 0; j < N_PAR; j++) 
-          eta[j] = exp(intercepts[j] + age_dv(j * n_age + t));
-        cumP = cumP * KM(eta, false, false);
+          q_rs[j] = LLGx(Type(t), exp_b0[j], b1[j]);
+        cumP = cumP * KM(q_rs, false, false);
       }
-      dll -= n[i] * log(cumP(A[i], Z[i]));
-    } 
+      ll = -n[i] * log(cumP(A[i], Z[i]));
+    }
+    dll += ll;
+    indiv_ll[i] = ll;
   }
   
   SIMULATE {
@@ -106,7 +100,7 @@ Type objective_function<Type>::operator() ()
     for (int s = 0; s < n_age; ++s) {
       vector<Type> eta_rep(N_PAR);
       for (int j = 0; j < N_PAR; j++)
-        eta_rep[j] = exp(intercepts[j] + age_dv(j * n_age + s));
+        eta_rep[j] = LLGx(Type(s), exp_b0[j], b1[j]);
       matrix<Type> qM_mat = KM(eta_rep, false, true);
       matrix<Type> pM_mat = KM(eta_rep, false, false);
       for (int i = 0; i < N_Q; ++i)
@@ -117,10 +111,10 @@ Type objective_function<Type>::operator() ()
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
-    REPORT(intercepts);
-    REPORT(log_sigma_rw1);
-    REPORT(age_dv);
-    REPORT(age_sm);
+    REPORT(b0);
+    REPORT(b1);
+    // Report individual log-likelihoods
+    REPORT(indiv_ll);
   }
   return dll;
 }

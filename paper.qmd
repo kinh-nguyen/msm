@@ -1,4 +1,4 @@
---- 
+---
 title: "Rate of sexual debut, marriage, and marital dissolutions in Sub-Saharan Africa"
 author:
   - name: Văn Kính Nguyễn
@@ -47,12 +47,16 @@ format:
       model: 3p
       layout: twocolumn
     number-sections: false
+    mainfont: "Libertinus Serif"
+    sansfont: "Libertinus Sans"
+    monofont: "Libertinus Mono"
     include-before-body:
       text: |
         \linenumbers
     include-in-header:
       text: |
         \usepackage{amsmath}
+        \setlength{\parindent}{0pt}
         %\usepackage[affil-it]{authblk}
         %\renewcommand{\Affilfont}{\footnotesize}
         \usepackage{hyperref}
@@ -73,10 +77,8 @@ format:
         \definecolor{textDark}{rgb}{0.396,0.482,0.514}
         \definecolor{pageLight}{rgb}{0.0,0.1686,0.2117}
         \definecolor{textLight}{rgb}{0.5137,0.5804,0.5882}
-        \pagecolor{pageDark}
-        \color{textDark} 
-        %\pagecolor{pageLight}
-        %\color{textLight} 
+        \pagecolor{pageDark}\color{textDark} 
+        %\pagecolor{pageLight}\color{textLight} 
     # linestretch: 1
     pagestyle: headings
     fontsize: 11pt
@@ -85,7 +87,7 @@ format:
     keep-tex: true
 
 bibliography: "/Users/knguyen/Documents/zotero.bib"
-latex-clean: false
+latex-clean: true
 fig-dpi: 300
 abstract: > 
   **Background** 
@@ -354,7 +356,28 @@ rate, transition probability, and hazard by ages, using posterior samples of
 
 ```{r}
 library(ktools)
+# install.packages("expm")
+# install.packages("TMB")
+# install.packages("elementalist")
+# install.packages("ggh4x")
+# library("expm")
+# remotes::install_github('kaskr/adcomp/TMB')
 library("TMB")
+library(ggh4x)
+# remotes::install_github("teunbrand/elementalist")
+library(elementalist)
+k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
+    theme(
+        legend.position = c(x, y),
+        legend.direction = dir,
+        legend.key.size = unit(size, "cm"),
+        legend.title = element_text(size = 9),
+        legend.box.background = element_rect_round(fill = "white", color = "grey90", radius = unit(0.2, "snpc"))
+    )
+}
+```
+
+```{r, loadata}
 vroom::vroom(here("data/new_d.csv"), col_select = -1) %>% 
   mutate(
     A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
@@ -362,11 +385,7 @@ vroom::vroom(here("data/new_d.csv"), col_select = -1) %>%
     across(where(is.numeric), as.integer)
     ) %>% 
 allot(d)
-```
 
-```{r, modelfit}
-#| eval: false
-# recode unobserved stages to repeated calculation
 d %>% 
   mutate(
     fit = case_when(
@@ -383,56 +402,40 @@ d %>%
   )  %>% 
 allot(d1)
 N_PAR = 7
-fit_ct = "MW"
+fit_ct = "CG"
 fitdt <- filter(d1, sex == 'female', cc == fit_ct) %>% 
   filter(cc == fit_ct, sex == 'female') %>% 
   group_by(cc, sex, A, Z, start, end, fit) %>%
   summarise(n = sum(n)) %>% # remove surveys effects
   ungroup()
 
-tdt <- fitdt %>%
-  select(A, Z, start, end, n, fit)
+tdt <- fitdt %>% select(A, Z, start, end, n, fit)
 ```
 
-```{r, modelfit}
+```{r, prepmodelfit}
 data <- list()
-data$prior_base <- c(0, 2.5) # log normal mean and sd
-data$prior_t <- c(0, 2.5) # mean and sd
-
+data$prior_base <- c(0, 5)
 data$n_age <- max(tdt$end) + 1 # include zero
-
-# compute the length of age_sm
-tdt %>%
-  mutate(maxage = max(end)) %>% # although there is no e.g. 50-51, but can be 20-51 jump
-  filter(A != Z) %>%
-  group_by(A, Z) %>%
-  arrange(A, Z) %>%
-  reframe(
-    minage = min(start),
-    maxage = max(maxage),
-    len_dv = maxage + 1, # include zero
-    len_lv = maxage - minage + 1, # include zero reference
-    len_pv = maxage - minage, # exclude reference age 20
-  ) %>% 
-  select(minage, maxage, starts_with('len_')) %>% 
-allot(exist_age)
-exist_age
-
-data <- modifyList(data, as.list(exist_age))
 data <- modifyList(data, as.list(tdt))
-
 init <- list(
-    intercepts = rnorm(N_PAR, data$prior_base[1], data$prior_base[2]), 
-    log_sigma_rw1 = log(1), 
-    age_sm = rep(1, sum(exist_age$len_pv)) 
+    b0 = rep(0, N_PAR),
+    log_b1 = rep(0, N_PAR)
 )
+```
+
+```{r}
+#| eval: false
 library(TMB)
 TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
 base::dyn.load(TMB::dynlib("code/msm"))
 invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
 obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = TRUE)
 sml <- obj$simulate() 
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 1))
+TMB::openmp(20)
+
+obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = FALSE)
+fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0, maxit = 1000))
+fit
 rp <- obj$simulate(obj$env$last.par.best)
 dir.create(here('fit'), showWarnings = FALSE)
 saveRDS(rp, here('fit/testMW.rds'))
@@ -440,7 +443,14 @@ saveRDS(rp, here('fit/testMW.rds'))
 
 ```{r, loadResult}
 rp <- readRDS(here('fit/testMW.rds'))
+
+Q_yearly = rp$qM_rep
 P_yearly = rp$pM_rep
+P_cum <- array(NA, dim = dim(P_yearly))
+P_cum[,,1] <- diag(7)
+for (k in 2:dim(P_yearly)[3]) 
+  P_cum[,,k] <- P_cum[,,k-1] %*% P_yearly[,,k]
+
 pe = tibble(
   start = 0:51,
   VV = P_yearly[1,1,],
@@ -452,37 +462,52 @@ pe = tibble(
   MS = P_yearly[3,4,],
   MD = P_yearly[3,5,],
   MW = P_yearly[3,6,],
-  MR = P_yearly[3,7,],
+  MR = P_yearly[4,7,],
+) %>% 
+pivot_longer(-start)
+
+qe = tibble(
+  start = 0:51,
+  VV = Q_yearly[1,1,],
+  VX = Q_yearly[1,2,],
+  VM = Q_yearly[1,3,],
+  XX = Q_yearly[2,2,],
+  XM = Q_yearly[2,3,],
+  MM = Q_yearly[3,3,],
+  MS = Q_yearly[3,4,],
+  MD = Q_yearly[3,5,],
+  MW = Q_yearly[3,6,],
+  MR = Q_yearly[4,7,],
 ) %>% 
 pivot_longer(-start)
 ```
 
+We computed the 1-year transition probabilities by age for the different marital
+statuses, $P(S_{t+1} = s | S_{t} = r)$, starting with virgin at birth, i.e., the
+probabilities of transitioning from virgin to sexual debut or to married, and
+from sexual debut to married. As these events are observed (i.e., respondents
+reported an age when the event occurred), the fitted probabilities are presented
+together with the empirical probabilities. The fitted probabilities of remaining
+in the same state, the complimentary probability, are also shown.
+@fig-fittedExample shows that the fitted probabilities are close to the
+empirical estimates. 
+
 ```{r}
 #| label: fig-fittedExample
-#| fig-cap: Fitted example
+#| fig-cap: Estimated and empirical conditional 1-year transition probabilities from currently virgin or currently sexually debuted by age. Only these transitions can be defined from survey data and have empirical estimates, which are showed as points with size relative to the population-at-risk in the previous age. Lines are the fitted probabilities from our model.
 #| include: true
 #| fig-env: "figure*"
 #| fig-pos: "!ht"
 #| fig-width: 7
-#| fig-height: 6
+#| fig-height: 4
 #| out-width: "100%"
-
-d %>% 
-  filter(cc == "ZA", sex == 'female') %>% 
+fitdt %>% 
   mutate(duration = end - start) %>% 
   group_by(A, start, duration) %>%
   summarise(N_A_start_duration = sum(n), .groups = 'drop') %>% 
 allot(at_risk)
 
-d %>% 
-  filter(cc == "ZA", sex == 'female') %>% 
-  mutate(duration = end - start) %>% 
-  group_by(A, start, duration) %>%
-  summarise(N_A_start_duration = sum(n), .groups = 'drop') %>% 
-allot(at_risk)
-
-d %>% 
-  filter(cc == "ZA", sex == 'female') %>% 
+fitdt %>% 
   mutate(duration = end - start) %>% 
   left_join(at_risk, by = c("A", "start", "duration")) %>%
   mutate(p_empirical = n / N_A_start_duration) %>% 
@@ -490,13 +515,30 @@ d %>%
     A = case_when(A == 0 ~ 'V', A == 1 ~ 'X', A == 2 ~ "M", A == 3 ~ "S", A == 4 ~ "D", A == 5 ~ "W", A == 6 ~ 'R', otherwise ~ NA_character_),
     Z = case_when(Z == 0 ~ 'V', Z == 1 ~ 'X', Z == 2 ~ "M", Z == 3 ~ "S", Z == 4 ~ "D", Z == 5 ~ "W", Z == 6 ~ 'R', otherwise ~ NA_character_),
     name = paste0(A,Z)) %>% 
-ggplot(aes(start, p_empirical, color = factor(name))) +
-  geom_point() +
-  geom_line(data = pe, aes(y = value)) +
-  facet_wrap(~name, scales = 'free_y') +
-  scale_y_continuous(labels = scales::percent) +
-  geom_hline(yintercept = 0) +
-  guides(color = FALSE)
+  left_join(pe, by = c("start", "name")) %>% 
+allot(pd)
+
+pd %>%
+  mutate(group = case_when(
+    A == "V" ~ 1,
+    A == "X" ~ 2,
+    A == "M" ~ 3,
+  ), 
+    p_empirical = ifelse(A == "M", NA_real_, p_empirical),
+  ) %>%
+  # filter(A != 'M') %>%
+  ggplot(aes(start, p_empirical)) +
+  geom_point(aes(size = N_A_start_duration, color = factor(name)), shape = 21) +
+  geom_line(aes(y = value, color = factor(name))) +
+  ggh4x::facet_grid2(cols = vars(group), labeller = labeller(group = function(x) {
+    recode(x, `1` = "Currently virgin", `2`= "Current sexual debuted", `3`= "Currently married")
+  })) +
+  geom_vline(xintercept = 40, linetype = 'dashed', color = 'grey50') +
+  scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, .1)) +
+  guides(size = FALSE) +
+  labs(x = 'Age', y = 'Transition probability', color = 'Transition') +
+  k.theme +
+  k.legend(.925, .5, dir = "vertical")
 ```
 
 ::: {#ref}
