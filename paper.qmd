@@ -200,7 +200,7 @@ states are not observed, we assumed if a marriage dissolute within a year after
 married, there was no intermediate states in between, except the current status 
 is remarried.
 
-# Log-skew-logistic baseline hazard 
+<!-- # Log-skew-logistic baseline hazard 
 
 We previously reparameterized of a skew-logistic for the survival models of age
 at sexual debut, which showed a better fit than other commonly used distributions
@@ -222,7 +222,30 @@ where $u = (\lambda t)^{-p}$. The hazard rate $\lambda_{rs}(t)$ is:
 where $\mathbf{X}$ is the vector of covariates and
 $\boldsymbol{\beta}$ is the vector of their coefficients. 
 The hazard represents the instantaneous transition intensity from state $i$ to
-state $j$ at age $t$ and a log-linear model of covariates $\mathbf{X}$ 
+state $j$ at age $t$ and a log-linear model of covariates $\mathbf{X}$  -->
+
+# Exponentially decaying Log-logistic hazard 
+
+We combines a Log-logistic base hazard with a modifying factor $1/(1+\delta
+e^{kt})$ that introduces an exponential-like decay Log-logistic (EDLL), with the
+hazard defined as:
+$$h(t; \lambda, \beta, \delta, k) = \frac{\beta t^{\beta-1}}{(\lambda + t^\beta)(1+\delta e^{kt})}$$
+where $\lambda = \alpha^\beta > 0$, with $\beta > 0$ is the shape parameter,
+$\delta = e^{kT} > 0$ (with $T$ being the reflection point), and $k > 0$ is
+the steepness parameter of the decay.
+The four-parameter hazard can model phenomena where a log-logistic hazard
+pattern is progressively attenuated, potentially leading to a (large) non-zero
+fraction of long-term survivors or insusceptibility. The hazard can capture
+non-monotonic risk with large reduction which can be beneficial is analysis of
+large waning risk, treatment efficacy fade-out, or effective long-term
+interventions. Example of the hazard function is shown in @fig-exampleHazard.
+For numerical computation, the log-transformed hazard function $\ln(h(t))$ is
+calculated as follows:
+\begin{align*}
+\ln(h(t)) &= \ln(\beta) + (\beta-1)\ln(t) \\
+          &\quad - \ln(\lambda + t^\beta) - \ln(1+\delta e^{kt})
+\end{align*}
+where the last two terms are computed using log-sum-exponential.
 
 ## Transition intensities and probabilities matrix
 
@@ -422,17 +445,24 @@ fitdt <- filter(d1, sex == 'female', cc == fit_ct) %>%
   summarise(n = sum(n)) %>% # remove surveys effects
   ungroup()
 
-tdt <- fitdt %>% select(A, Z, start, end, n, fit)
+tdt <- fitdt %>%
+  select(A, Z, start, end, n, fit) %>%
+  mutate(
+    dstart = as.double(start),
+    istart = start,
+  ) %>%
+  filter(dstart > 0)
 ```
 
 ```{r, prepmodelfit}
 data <- list()
-data$prior_base <- c(0, 5)
 data$n_age <- max(tdt$end) + 1 # include zero
 data <- modifyList(data, as.list(tdt))
 init <- list(
-    b0 = rep(0, N_PAR),
-    log_b1 = rep(0, N_PAR)
+    log_T_M = rep(log(20), N_PAR),
+    log_beta = rep(log(2), N_PAR),
+    log_alpha = rep(log(50/2), N_PAR),
+    log_k = rep(log(0.5), N_PAR)
 )
 ```
 
@@ -442,14 +472,18 @@ library(TMB)
 TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
 base::dyn.load(TMB::dynlib("code/msm"))
 invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
-obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = TRUE)
-sml <- obj$simulate() 
 TMB::openmp(20)
+obj <- TMB::MakeADFun(
+  data, init, 
+  DLL = "msm", silent = FALSE
+)
 
-obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = FALSE)
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0, maxit = 1000))
+fit <- nlminb(
+  obj$par, obj$fn, obj$gr,
+  control = list(trace = 1, maxit = 1000),
+)
 fit
-rp <- obj$simulate(obj$env$last.par.best)
+rp <- obj$simulate()
 dir.create(here('fit'), showWarnings = FALSE)
 saveRDS(rp, here('fit/testMW.rds'))
 ```
@@ -481,12 +515,12 @@ pivot_longer(-start)
 
 qe = tibble(
   start = 0:51,
-  VV = Q_yearly[1,1,],
+  VV = -Q_yearly[1,1,],
   VX = Q_yearly[1,2,],
   VM = Q_yearly[1,3,],
-  XX = Q_yearly[2,2,],
+  XX = -Q_yearly[2,2,],
   XM = Q_yearly[2,3,],
-  MM = Q_yearly[3,3,],
+  MM = -Q_yearly[3,3,],
   MS = Q_yearly[3,4,],
   MD = Q_yearly[3,5,],
   MW = Q_yearly[3,6,],
@@ -539,20 +573,60 @@ pd %>%
   ), 
     p_empirical = ifelse(A == "M", NA_real_, p_empirical),
   ) %>%
-  # filter(A != 'M') %>%
+  filter(A != "M") %>%
+  filter(start > 0) %>% 
   ggplot(aes(start, p_empirical)) +
   geom_point(aes(size = N_A_start_duration, color = factor(name)), shape = 21) +
   geom_line(aes(y = value, color = factor(name))) +
-  ggh4x::facet_grid2(cols = vars(group), labeller = labeller(group = function(x) {
-    recode(x, `1` = "Currently virgin", `2`= "Current sexual debuted", `3`= "Currently married")
-  })) +
-  geom_vline(xintercept = 40, linetype = 'dashed', color = 'grey50') +
+  ggh4x::facet_grid2(
+    cols = vars(group),
+    scales = "free_y",
+    labeller = labeller(group = function(x) {
+      recode(x, `1` = "Currently virgin", `2` = "Current sexual debuted", `3` = "Currently married")
+    })
+  ) +
   scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, .1)) +
   guides(size = FALSE) +
   labs(x = 'Age', y = 'Transition probability', color = 'Transition') +
-  k.theme +
-  k.legend(.925, .5, dir = "vertical")
+  k.theme + k.legend(.925, .5, dir = "vertical")
 ```
 
 ::: {#ref}
 :::
+
+# Appendix
+
+```{r}
+#| label: fig-exampleHazard
+#| fig-cap: Illustration of the Log-logistic base hazard with exponential decay (EDLL) hazard function for $\lambda = \exp(8)$, $\beta = 2.5$, $\delta = 0.01$, and $k = 0.1875$. The hazard is defined as $h(t; \lambda, \beta, \delta, k) = \frac{\beta t^{\beta-1}}{(\lambda + t^\beta)(1+\delta e^{kt})}$. 
+#| include: true
+#| fig-env: "figure*"
+#| fig-pos: "!ht"
+#| fig-width: 7
+#| fig-height: 5
+#| out-width: "80%"
+
+lambda <- exp(8)
+beta   <- 2.5
+delta  <- 0.01
+k_val  <- 0.1875 
+
+# Log-hazard
+# h(t) = (beta * t^(beta-1)) / ((lambda + t^beta) * (1 + delta * exp(k*t)))
+log_h_t_calculator <- function(t, lambda, beta, delta, k) {
+  logspace_add <- function(logx, logy) 
+    pmax(logx, logy) + log1p(exp(-abs(logx - logy)))
+  log_denom1 <- logspace_add(log(lambda), beta * log(t))
+  log_denom2 <- logspace_add(0, log(delta) + k * t)
+  log(beta) + (beta - 1) * log(t) - log_denom1 - log_denom2
+}
+
+log_h_t_calculator(1:50, lambda, beta, delta, k_val) %>%
+  exp() %>%
+  plot(1:50, .,
+    type = "l",
+    xlab = "Time (t)", ylab = "Hazard h(t)",
+    main = "Simulated Hazard Function",
+    ylim = c(0, max(h_simulated, na.rm = TRUE) * 1.15),
+  )
+```

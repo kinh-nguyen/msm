@@ -52,6 +52,25 @@ Type LSLx(Type t, Type lamda, Type p, Type gamma) {
 }
 
 template<class Type>
+Type EDLLx(
+    Type t, Type log_t,         // Current time t and log(t)
+    Type log_alpha,             // log(alpha) - LL scale related (alpha > 0)
+    Type beta,                  // beta - LL shape (beta > 0)
+    Type log_beta,              // log(beta)
+    Type T_M,                   // T_M - modifier timing (can be any real number)
+    Type k                      // k - modifier rate/steepness (k > 0)
+) {
+    Type log_t_div_alpha = log_t - log_alpha;
+    // log(h_LL(t)) = log(beta) - log(alpha) + (beta-1)*log(t/alpha) - log(1 + (t/alpha)^beta)
+    Type log_LL_denom_factor = logspace_add(Type(0.0), beta * log_t_div_alpha);
+    Type log_h_LL = log_beta - log_alpha + (beta - Type(1.0)) * log_t_div_alpha - log_LL_denom_factor;
+    // Modifier part: log(1 + exp(k*(t-T_M)))
+    Type log_modifier_denom = logspace_add(Type(0.0), k * (t - T_M));
+    Type log_final_hz = log_h_LL - log_modifier_denom;
+    return exp(log_final_hz);
+}
+
+template<class Type>
 Type objective_function<Type>::operator() ()
 {
   parallel_accumulator<Type> dll(this);
@@ -59,49 +78,53 @@ Type objective_function<Type>::operator() ()
   // data
   DATA_IVECTOR(A);
   DATA_IVECTOR(Z);
-  DATA_IVECTOR(start);
+  DATA_IVECTOR(istart);
+  DATA_VECTOR(dstart);
+  vector<Type> log_t = log(dstart);
   DATA_IVECTOR(end);
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
 
-  // priors
-  DATA_VECTOR(prior_base);
+  PARAMETER_VECTOR(log_T_M);
+  vector<Type> T_M = exp(log_T_M);
+  dll -= dnorm(log_T_M, Type(0), Type(5), true).sum();
 
-  // log-skew-logistic hazard model
-  PARAMETER_VECTOR(log_lambda)
-  vector<Type> lambda = exp(log_lambda);
-  dll -= dnorm(lambda, Type(0), Type(1), true).sum() + log_lambda.sum();
+  PARAMETER_VECTOR(log_beta);
+  vector<Type> beta = exp(log_beta);
+  dll -= dnorm(log_beta, Type(0), Type(5), true).sum();
 
-  PARAMETER_VECTOR(log_p);
-  vector<Type> p = exp(log_p);
-  dll -= dnorm(p, Type(0), Type(1), true).sum() + log_p.sum();
+  PARAMETER_VECTOR(log_alpha);
+  vector<Type> alpha = exp(log_alpha);
+  dll -= dnorm(log_alpha, Type(0), Type(5), true).sum();
 
-  PARAMETER_VECTOR(log_gamma);
-  vector<Type> gamma = exp(log_gamma);
-  dll -= dnorm(gamma, Type(0), Type(1), true).sum() + log_gamma.sum();
+  PARAMETER_VECTOR(log_k);
+  vector<Type> k = exp(log_k);
+  dll -= dnorm(log_k, Type(0), Type(5), true).sum();
 
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
 
-  // Add vector to track individual log-likelihoods
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
+  auto fill_qrs = [&](Type age, Type log_age) {
+    for (int p = 0; p < N_PAR; p++)
+      q_rs[p] = EDLLx(age, log_age, log_alpha[p], beta[p], log_beta[p], T_M[p], k[p]);
+  };
+
   for (int i = 0; i < A.size(); i++) {
     Type ll = 0;
-    for (int j = 0; j < N_PAR; j++)
-      q_rs[j] = LSLx(Type(start[i]), lambda[j], p[j], gamma[j]); 
+    fill_qrs(dstart[i], log_t[i]);
     if (fit[i] == 0) 
       ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
       ll = -n[i] * KM(q_rs, true, false)(A[i], Z[i]); 
     else if (fit[i] == 2) {
       matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
-      for (int t = start[i]; t < end[i]; t++)
+      for (int t = istart[i]; t < end[i]; t++)
       {
-        for (int j = 0; j < N_PAR; j++) 
-          q_rs[j] = LSLx(Type(t), lambda[j], p[j], gamma[j]);
+        fill_qrs(Type(t), log(Type(t)));
         cumP = cumP * KM(q_rs, false, false);
       }
       ll = -n[i] * log(cumP(A[i], Z[i]));
@@ -112,12 +135,10 @@ Type objective_function<Type>::operator() ()
   
   SIMULATE {
     array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
-    for (int s = 0; s < n_age; ++s) {
-      vector<Type> eta_rep(N_PAR);
-      for (int j = 0; j < N_PAR; j++)
-        eta_rep[j] = LSLx(Type(s), lambda[j], p[j], gamma[j]);
-      matrix<Type> qM_mat = KM(eta_rep, false, true);
-      matrix<Type> pM_mat = KM(eta_rep, false, false);
+    for (int s = 1; s < n_age; ++s) {
+      fill_qrs(Type(s), log(Type(s)));
+      matrix<Type> qM_mat = KM(q_rs, false, true);
+      matrix<Type> pM_mat = KM(q_rs, false, false);
       for (int i = 0; i < N_Q; ++i)
         for (int j = 0; j < N_Q; ++j) {
           qM_rep(i, j, s) = qM_mat(i, j);
@@ -126,10 +147,10 @@ Type objective_function<Type>::operator() ()
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
-    REPORT(p);
-    REPORT(gamma);
-    REPORT(lambda);
-    // Report individual log-likelihoods
+    REPORT(T_M);
+    REPORT(beta);
+    REPORT(alpha);
+    REPORT(k);
     REPORT(indiv_ll);
   }
   return dll;
