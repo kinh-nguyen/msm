@@ -200,21 +200,34 @@ states are not observed, we assumed if a marriage dissolute within a year after
 married, there was no intermediate states in between, except the current status 
 is remarried.
 
-## Transition Intensities and Probabilities
+# Log-skew-logistic baseline hazard 
 
-The instantaneous transition intensity from state $i$ to state $j$ at age $t$,
-given a vector of covariates $\mathbf{X}$, is modeled using a linear predictor
-on the log scale, equivalent to a Gompertz hazards type model [@van2016multi],
-i.e., 
-\begin{equation}\label{eq:eta}
-\lambda_{ij}(t, \mathbf{X}) = \alpha_{ij} + \beta_{ij} t + \sum_k \gamma_{ijk}
-X_k
+We previously reparameterized of a skew-logistic for the survival models of age
+at sexual debut, which showed a better fit than other commonly used distributions
+[@nguyen2022]. This distribution is described elsewhere as a Generalized
+Logistic Distribution, Dagum distribution, or Burr Type III distribution. We
+parameterized the distribution by three parameters, $\lambda, p, \gamma$, where
+$\lambda > 0$ is the scale, $p > 0$ the shape, and $\gamma > 0$ the
+skewness parameter. The distribution is implemented as R functions `dskewlogis`,
+`pskewlogis` in [kinh-nguyen/ktools](https:://github.com/kinh-nguyen/ktools).
+The baseline hazard function for the distribution is: 
+$$
+\lambda_{rs0}(t) = \frac{\gamma p u}{t (1+u) ((1+u)^\gamma - 1)}
+$$
+where $u = (\lambda t)^{-p}$. The hazard rate $\lambda_{rs}(t)$ is:
+\begin{equation}
+\label{eq:dagum_ph_hazard} \lambda_{rs}(t | \mathbf{X}) =
+\lambda_{rs0}(t; \lambda, p, \gamma) \exp(\boldsymbol{\beta}^T \mathbf{X})
 \end{equation}
-where $\alpha_{ij}$ is the baseline intensity intercept, $\beta_{ij}$ is
-the age effect, and $\gamma_{ijk}$ are coefficients for other time-constant or
-time-varying covariates $X_k$. The parameters $\lambda_{ij}$ are the
-instantaneous transition rates between the states, which is described with the
-intensity matrix $Q(t, \mathbf{X})$, a square matrix where
+where $\mathbf{X}$ is the vector of covariates and
+$\boldsymbol{\beta}$ is the vector of their coefficients. 
+The hazard represents the instantaneous transition intensity from state $i$ to
+state $j$ at age $t$ and a log-linear model of covariates $\mathbf{X}$ 
+
+## Transition intensities and probabilities matrix
+
+The transition rates between the states is described with the intensity matrix
+$Q(t, \mathbf{X})$, 
 \begin{equation}\label{mat:Q}
 \scriptsize
 Q = 

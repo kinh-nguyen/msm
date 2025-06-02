@@ -40,6 +40,17 @@ Type LLGx(Type t, Type exp_b0, Type b1) {
   return numerator / denominator;
 }
 
+// Log-skew-logistic baseline hazard function 
+template <class Type>
+Type LSLx(Type t, Type lamda, Type p, Type gamma) {
+  if (t == 0.0) return Type(0.0); // can be undefined without reparameterization
+  Type
+      u = pow(lamda * t, -p),
+      n = gamma * p * u,
+      d = t * (1 + u) * (pow(1 + u, gamma) - Type(1.0));
+  return n / d;
+}
+
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
@@ -57,14 +68,18 @@ Type objective_function<Type>::operator() ()
   // priors
   DATA_VECTOR(prior_base);
 
-  // log-logistic hazard model
-  PARAMETER_VECTOR(b0);
-  dll -= dnorm(b0, prior_base(0), prior_base(1), true).sum();
-  vector<Type> exp_b0 = exp(b0);
+  // log-skew-logistic hazard model
+  PARAMETER_VECTOR(log_lambda)
+  vector<Type> lambda = exp(log_lambda);
+  dll -= dnorm(lambda, Type(0), Type(1), true).sum() + log_lambda.sum();
 
-  PARAMETER_VECTOR(log_b1)
-  vector<Type> b1 = exp(log_b1);
-  dll -= dnorm(b1, Type(0), Type(1), true).sum() + log_b1.sum(); 
+  PARAMETER_VECTOR(log_p);
+  vector<Type> p = exp(log_p);
+  dll -= dnorm(p, Type(0), Type(1), true).sum() + log_p.sum();
+
+  PARAMETER_VECTOR(log_gamma);
+  vector<Type> gamma = exp(log_gamma);
+  dll -= dnorm(gamma, Type(0), Type(1), true).sum() + log_gamma.sum();
 
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
@@ -76,7 +91,7 @@ Type objective_function<Type>::operator() ()
   for (int i = 0; i < A.size(); i++) {
     Type ll = 0;
     for (int j = 0; j < N_PAR; j++)
-      q_rs[j] = LLGx(Type(start[i]), exp_b0[j], b1[j]); 
+      q_rs[j] = LSLx(Type(start[i]), lambda[j], p[j], gamma[j]); 
     if (fit[i] == 0) 
       ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
@@ -86,7 +101,7 @@ Type objective_function<Type>::operator() ()
       for (int t = start[i]; t < end[i]; t++)
       {
         for (int j = 0; j < N_PAR; j++) 
-          q_rs[j] = LLGx(Type(t), exp_b0[j], b1[j]);
+          q_rs[j] = LSLx(Type(t), lambda[j], p[j], gamma[j]);
         cumP = cumP * KM(q_rs, false, false);
       }
       ll = -n[i] * log(cumP(A[i], Z[i]));
@@ -100,7 +115,7 @@ Type objective_function<Type>::operator() ()
     for (int s = 0; s < n_age; ++s) {
       vector<Type> eta_rep(N_PAR);
       for (int j = 0; j < N_PAR; j++)
-        eta_rep[j] = LLGx(Type(s), exp_b0[j], b1[j]);
+        eta_rep[j] = LSLx(Type(s), lambda[j], p[j], gamma[j]);
       matrix<Type> qM_mat = KM(eta_rep, false, true);
       matrix<Type> pM_mat = KM(eta_rep, false, false);
       for (int i = 0; i < N_Q; ++i)
@@ -111,8 +126,9 @@ Type objective_function<Type>::operator() ()
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
-    REPORT(b0);
-    REPORT(b1);
+    REPORT(p);
+    REPORT(gamma);
+    REPORT(lambda);
     // Report individual log-likelihoods
     REPORT(indiv_ll);
   }
