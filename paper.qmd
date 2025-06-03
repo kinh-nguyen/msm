@@ -224,7 +224,7 @@ $\boldsymbol{\beta}$ is the vector of their coefficients.
 The hazard represents the instantaneous transition intensity from state $i$ to
 state $j$ at age $t$ and a log-linear model of covariates $\mathbf{X}$  -->
 
-# Exponentially decaying Log-logistic hazard 
+<!-- # Exponentially decaying Log-logistic hazard 
 
 We combines a Log-logistic base hazard with a modifying factor $1/(1+\delta
 e^{kt})$ that introduces an exponential-like decay Log-logistic (EDLL), with the
@@ -245,7 +245,24 @@ calculated as follows:
 \ln(h(t)) &= \ln(\beta) + (\beta-1)\ln(t) \\
           &\quad - \ln(\lambda + t^\beta) - \ln(1+\delta e^{kt})
 \end{align*}
-where the last two terms are computed using log-sum-exponential.
+where the last two terms are computed using log-sum-exponential. -->
+
+# Inverse Gamma hazard
+
+Hazard of transition from state $i$ to state $j$ at age $t$ is modeled as an
+inverse gamma's hazard where its probability density function is
+$$f(x; \mu, \sigma) = \frac{\beta^{\alpha}}{\Gamma(\alpha)} x^{-(\alpha+1)} e^{-\beta/x}$$
+in which $\mu>0$, $\sigma>0$, $\alpha = 1/\sigma^2$ and 
+parameter $\beta = \mu (\alpha + 1)$ [@rigby2020]. The 
+survival function is
+$$S(x; \mu, \sigma) = \frac{\gamma(\alpha, \beta/x)}{\Gamma(\alpha)}$$
+where $\gamma(s,z) = \int_0^z u^{s-1}e^{-u}du$ is the lower
+incomplete gamma function. The log-hazard function is then 
+\begin{align*}
+& \log h(x; \mu, \sigma) = \log(f(x; \mu, \sigma)) - \log(S(x; \mu, \sigma)) \\
+& = \alpha \log \beta - (\alpha+1) \log x - \frac{\beta}{x} 
+ - \log \gamma\left(\alpha, \frac{\beta}{x}\right)
+\end{align*}
 
 ## Transition intensities and probabilities matrix
 
@@ -457,12 +474,12 @@ tdt <- fitdt %>%
 ```{r, prepmodelfit}
 data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
+data$prior_mu <- c(0, 5)
+data$prior_sigma <- c(0, 1)
 data <- modifyList(data, as.list(tdt))
 init <- list(
-    log_T_M = rep(log(20), N_PAR),
-    log_beta = rep(log(2), N_PAR),
-    log_alpha = rep(log(50/2), N_PAR),
-    log_k = rep(log(0.5), N_PAR)
+  log_mu = c(2.689913, 2.773320, 2.867305, 2.975757, 1.120091, 2.461707, 3.229394),
+  log_sigma = c(-2.0602550, -1.7393982, -1.5719603, -1.5738861, 0.4263181, 0.1297839, -1.8194070)
 )
 ```
 
@@ -483,7 +500,7 @@ fit <- nlminb(
   control = list(trace = 1, maxit = 1000),
 )
 fit
-rp <- obj$simulate()
+rp <- obj$simulate(obj$env$last.par.best)
 dir.create(here('fit'), showWarnings = FALSE)
 saveRDS(rp, here('fit/testMW.rds'))
 ```
@@ -626,7 +643,6 @@ log_h_t_calculator(1:50, lambda, beta, delta, k_val) %>%
   plot(1:50, .,
     type = "l",
     xlab = "Time (t)", ylab = "Hazard h(t)",
-    main = "Simulated Hazard Function",
-    ylim = c(0, max(h_simulated, na.rm = TRUE) * 1.15),
+    main = "Simulated Hazard Function"
   )
 ```

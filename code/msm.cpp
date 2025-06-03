@@ -28,46 +28,13 @@ struct PQ {
     };
 };
 
-// Log-logistic baseline hazard function where
+// https://dlmf.nist.gov/8.2
 // t is time, exp_b0 = alpha, b1 is beta > 0
 template <class Type>
-Type LLGx(Type t, Type exp_b0, Type b1) {
-  if (t == 0.0) return Type(0.0); 
-  Type 
-    t_pow_b1 = pow(t, b1),
-    numerator = exp_b0 * b1 * t_pow_b1 / t,
-    denominator = Type(1.0) + exp_b0 * t_pow_b1;
-  return numerator / denominator;
-}
-
-// Log-skew-logistic baseline hazard function 
-template <class Type>
-Type LSLx(Type t, Type lamda, Type p, Type gamma) {
-  if (t == 0.0) return Type(0.0); // can be undefined without reparameterization
-  Type
-      u = pow(lamda * t, -p),
-      n = gamma * p * u,
-      d = t * (1 + u) * (pow(1 + u, gamma) - Type(1.0));
-  return n / d;
-}
-
-template<class Type>
-Type EDLLx(
-    Type t, Type log_t,         // Current time t and log(t)
-    Type log_alpha,             // log(alpha) - LL scale related (alpha > 0)
-    Type beta,                  // beta - LL shape (beta > 0)
-    Type log_beta,              // log(beta)
-    Type T_M,                   // T_M - modifier timing (can be any real number)
-    Type k                      // k - modifier rate/steepness (k > 0)
-) {
-    Type log_t_div_alpha = log_t - log_alpha;
-    // log(h_LL(t)) = log(beta) - log(alpha) + (beta-1)*log(t/alpha) - log(1 + (t/alpha)^beta)
-    Type log_LL_denom_factor = logspace_add(Type(0.0), beta * log_t_div_alpha);
-    Type log_h_LL = log_beta - log_alpha + (beta - Type(1.0)) * log_t_div_alpha - log_LL_denom_factor;
-    // Modifier part: log(1 + exp(k*(t-T_M)))
-    Type log_modifier_denom = logspace_add(Type(0.0), k * (t - T_M));
-    Type log_final_hz = log_h_LL - log_modifier_denom;
-    return exp(log_final_hz);
+Type IGx(Type t, Type log_t, Type a, Type b) {
+  Type log_igm = lgamma(a) + pgamma(b / t, a, Type(1.0));
+  Type lhz = a * log(b) - (a + Type(1.0)) * log_t - b / t - log_igm;
+  return exp(lhz);
 }
 
 template<class Type>
@@ -86,21 +53,19 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
 
-  PARAMETER_VECTOR(log_T_M);
-  vector<Type> T_M = exp(log_T_M);
-  dll -= dnorm(log_T_M, Type(0), Type(5), true).sum();
+  PARAMETER_VECTOR(log_mu);
+  DATA_VECTOR(prior_mu);
+  vector<Type> mu = exp(log_mu);
+  dll -= dnorm(log_mu, prior_mu(0), prior_mu(1), true).sum();
 
-  PARAMETER_VECTOR(log_beta);
-  vector<Type> beta = exp(log_beta);
-  dll -= dnorm(log_beta, Type(0), Type(5), true).sum();
+  PARAMETER_VECTOR(log_sigma);
+  DATA_VECTOR(prior_sigma);
+  vector<Type> sigma = exp(log_sigma);
+  dll -= dnorm(log_sigma, prior_sigma(0), prior_sigma(1), true).sum();
 
-  PARAMETER_VECTOR(log_alpha);
-  vector<Type> alpha = exp(log_alpha);
-  dll -= dnorm(log_alpha, Type(0), Type(5), true).sum();
-
-  PARAMETER_VECTOR(log_k);
-  vector<Type> k = exp(log_k);
-  dll -= dnorm(log_k, Type(0), Type(5), true).sum();
+  // Transformation
+  vector<Type> a = Type(1.0) / (sigma * sigma);
+  vector<Type> b = mu * (a + Type(1.0));
 
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
@@ -110,7 +75,7 @@ Type objective_function<Type>::operator() ()
 
   auto fill_qrs = [&](Type age, Type log_age) {
     for (int p = 0; p < N_PAR; p++)
-      q_rs[p] = EDLLx(age, log_age, log_alpha[p], beta[p], log_beta[p], T_M[p], k[p]);
+      q_rs[p] = IGx(age, log_age, a[p], b[p]);
   };
 
   for (int i = 0; i < A.size(); i++) {
@@ -147,10 +112,8 @@ Type objective_function<Type>::operator() ()
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
-    REPORT(T_M);
-    REPORT(beta);
-    REPORT(alpha);
-    REPORT(k);
+    REPORT(mu);
+    REPORT(sigma);
     REPORT(indiv_ll);
   }
   return dll;
