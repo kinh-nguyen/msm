@@ -41,6 +41,18 @@ Type IGx(Type t, Type log_t, Type a, Type b) {
 }
 
 template<class Type>
+Type SHASHx(Type t, Type mu, Type sigma, Type nu, Type tau) {
+  Type z = (t - mu) / sigma;
+  Type shz = log(z + sqrt(z * z + 1));
+  Type e1 = exp(tau * shz);
+  Type e2 = exp(-nu * shz);
+  Type r = 0.5 * (e1 - e2);
+  Type c = 0.5 * (tau * e1 + nu * e2);
+  Type log_d = log(c) - 0.5 * r * r - 0.5 * log(2.0 * M_PI) - log(sigma) - 0.5 * log(1 + z * z);
+  return exp(log_d);
+}
+
+template<class Type>
 Type objective_function<Type>::operator() ()
 {
   parallel_accumulator<Type> dll(this);
@@ -66,6 +78,16 @@ Type objective_function<Type>::operator() ()
   vector<Type> sigma = exp(log_sigma);
   dll -= dnorm(log_sigma, prior_sigma(0), prior_sigma(1), true).sum();
 
+  PARAMETER_VECTOR(log_nu);
+  DATA_VECTOR(prior_nu);
+  vector<Type> nu = exp(log_nu);
+  dll -= dnorm(log_nu, prior_nu(0), prior_nu(1), true).sum();
+  
+  PARAMETER_VECTOR(log_tau);
+  DATA_VECTOR(prior_tau);
+  vector<Type> tau = exp(log_tau);
+  dll -= dnorm(log_tau, prior_tau(0), prior_tau(1), true).sum();
+
   DATA_VECTOR(prior_coef);
   
   PARAMETER_VECTOR(itc);
@@ -74,9 +96,6 @@ Type objective_function<Type>::operator() ()
   dll -= dnorm(btt, prior_coef(0), prior_coef(1), true).sum();
   PARAMETER_VECTOR(tsq);
   dll -= dnorm(tsq, prior_coef(0), prior_coef(1), true).sum();
-  // Transformation
-  vector<Type> a = Type(1.0) / (sigma * sigma);
-  vector<Type> b = mu * (a + Type(1.0));
 
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
@@ -85,17 +104,17 @@ Type objective_function<Type>::operator() ()
   indiv_ll.setZero();
   Type tmid = 20; // reference age
 
-  auto fill_qrs = [&](Type age, Type log_age) {
+  auto fill_qrs = [&](Type age) {
     Type tmid_age = age - tmid;
     for (int p = 0; p < N_PAR; p++) {
-        Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
-        q_rs[p] = IGx(age, log_age, a[p], b[p]) * exp(eta);
+      Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
+      q_rs[p] = SHASHx(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
     }
   };
 
   for (int i = 0; i < A.size(); i++) {
     Type ll = 0;
-    fill_qrs(dstart[i], log_t[i]);
+    fill_qrs(dstart[i]);
     if (fit[i] == 0) 
       ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]); 
     else if (fit[i] == 1) 
@@ -104,7 +123,7 @@ Type objective_function<Type>::operator() ()
       matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = istart[i]; t < end[i]; t++)
       {
-        fill_qrs(Type(t), log(Type(t)));
+        fill_qrs(Type(t));
         cumP = cumP * KM(q_rs, false, false);
       }
       ll = -n[i] * log(cumP(A[i], Z[i]));
@@ -116,7 +135,7 @@ Type objective_function<Type>::operator() ()
   SIMULATE {
     array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
     for (int s = 1; s < n_age; ++s) {
-      fill_qrs(Type(s), log(Type(s)));
+      fill_qrs(Type(s));
       matrix<Type> qM_mat = KM(q_rs, false, true);
       matrix<Type> pM_mat = KM(q_rs, false, false);
       for (int i = 0; i < N_Q; ++i)
@@ -129,6 +148,8 @@ Type objective_function<Type>::operator() ()
     REPORT(pM_rep);
     REPORT(mu);
     REPORT(sigma);
+    REPORT(tau);
+    REPORT(nu);
     REPORT(itc);
     REPORT(btt);
     REPORT(tsq);

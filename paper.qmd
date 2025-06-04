@@ -247,7 +247,7 @@ calculated as follows:
 \end{align*}
 where the last two terms are computed using log-sum-exponential. -->
 
-# Inverse Gamma hazard
+<!-- # Inverse Gamma hazard
 
 Hazard of transition from state $i$ to state $j$ at age $t$ is modeled as an
 inverse gamma's hazard where its probability density function is
@@ -262,7 +262,28 @@ incomplete gamma function. The log-hazard function is then
 & \log h(x; \mu, \sigma) = \log(f(x; \mu, \sigma)) - \log(S(x; \mu, \sigma)) \\
 & = \alpha \log \beta - (\alpha+1) \log x - \frac{\beta}{x} 
  - \log \gamma\left(\alpha, \frac{\beta}{x}\right)
-\end{align*}
+\end{align*} -->
+
+# Log-sinh-arcsinh hazard
+
+Since empirical data shows a variety of shapes in the transition probability
+over age, we selected the sinh-arcsinh distribution [@jones2009] and reparameterized it
+to have a support on $(0, \infty)$, namely a log-sinh-arcsinh distribution
+(LSAS). This is done by substituting $y = \log x$ and performed a change of
+variable, i.e.,
+$$
+f(x) = \phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5} 
+$$
+where $z = (\log x - \mu)\sigma^{-1}$, 
+$e_1 = \exp[\tau\cdot \text{asinh}(z)]$,
+$e_2 = \exp[-\nu \cdot \text{asinh}(z)]$,
+$r = 0.5 \left[ e_1 - e_2 \right]$,
+$c = 0.5 \left[ \tau \cdot e_1 + \nu \cdot e_2 \right]$,
+and $\phi(r)$ is the standard normal PDF evaluated at $r$.  Only $\mu$ is on
+the real line, all $\sigma$, $\tau$, $\nu$ are positive parameters. The
+cummulative distribution function is given by $F(x) = \Phi(r)$ and the hazard
+function is $h(x) = f(x)/(1 - F(x))$. Implementation of the hazard function is
+done in TMB code available on [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm/).
 
 ## Transition intensities and probabilities matrix
 
@@ -476,12 +497,16 @@ data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
 data$prior_mu <- c(0, 5)
 data$prior_sigma <- c(0, 1)
+data$prior_nu <- c(0, 1)
+data$prior_tau <- c(0, 1)
 data$prior_coef <- c(0, 1)
 data <- modifyList(data, as.list(tdt))
 init <- list(
-  log_mu = c(2.689913, 2.773320, 2.867305, 2.975757, 1.120091, 2.461707, 3.229394),
-  log_sigma = c(-2.0602550, -1.7393982, -1.5719603, -1.5738861, 0.4263181, 0.1297839, -1.8194070)
-  itc = c(1.0224811, 0.8797007, 1.0992188, 0.4234799, 0.9956977, 2.2263186, 0.9848160),
+  log_mu = rep(log(20), N_PAR),
+  log_sigma = rep(log(1), N_PAR),
+  log_nu = rep(log(1), N_PAR),
+  log_tau = rep(log(1), N_PAR),
+  itc = rep(0, N_PAR),
   btt = c(0, 0, 0, 0, 0, 0, 0),
   tsq = c(0, 0, 0, 0, 0, 0, 0)
 )
