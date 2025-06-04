@@ -86,7 +86,7 @@ format:
     indent: false
     keep-tex: true
 
-bibliography: "/Users/knguyen/Documents/zotero.bib"
+bibliography: "/Users/knguyen/zotero.bib"
 latex-clean: true
 fig-dpi: 300
 abstract: > 
@@ -476,10 +476,14 @@ data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
 data$prior_mu <- c(0, 5)
 data$prior_sigma <- c(0, 1)
+data$prior_coef <- c(0, 1)
 data <- modifyList(data, as.list(tdt))
 init <- list(
   log_mu = c(2.689913, 2.773320, 2.867305, 2.975757, 1.120091, 2.461707, 3.229394),
   log_sigma = c(-2.0602550, -1.7393982, -1.5719603, -1.5738861, 0.4263181, 0.1297839, -1.8194070)
+  itc = c(1.0224811, 0.8797007, 1.0992188, 0.4234799, 0.9956977, 2.2263186, 0.9848160),
+  btt = c(0, 0, 0, 0, 0, 0, 0),
+  tsq = c(0, 0, 0, 0, 0, 0, 0)
 )
 ```
 
@@ -492,12 +496,13 @@ invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
 TMB::openmp(20)
 obj <- TMB::MakeADFun(
   data, init, 
+  map = tmb_fixit(init, c('tsq', 'btt')),
   DLL = "msm", silent = FALSE
 )
 
 fit <- nlminb(
-  obj$par, obj$fn, obj$gr,
-  control = list(trace = 1, maxit = 1000),
+  obj$env$last.par.best, obj$fn, obj$gr,
+  control = list(trace = 0, iter.max = 1000),
 )
 fit
 rp <- obj$simulate(obj$env$last.par.best)

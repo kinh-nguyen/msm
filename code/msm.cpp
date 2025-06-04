@@ -30,9 +30,12 @@ struct PQ {
 
 // https://dlmf.nist.gov/8.2
 // t is time, exp_b0 = alpha, b1 is beta > 0
+// Inverse gamma hazard function
+// https://github.com/gamlss-dev/gamlss/issues/22
 template <class Type>
 Type IGx(Type t, Type log_t, Type a, Type b) {
-  Type log_igm = lgamma(a) + pgamma(b / t, a, Type(1.0));
+  // https://dlmf.nist.gov/8.2
+  Type log_igm = lgamma(a) + log(pgamma(b / t, a, Type(1.0)));
   Type lhz = a * log(b) - (a + Type(1.0)) * log_t - b / t - log_igm;
   return exp(lhz);
 }
@@ -63,6 +66,14 @@ Type objective_function<Type>::operator() ()
   vector<Type> sigma = exp(log_sigma);
   dll -= dnorm(log_sigma, prior_sigma(0), prior_sigma(1), true).sum();
 
+  DATA_VECTOR(prior_coef);
+  
+  PARAMETER_VECTOR(itc);
+  dll -= dnorm(itc, prior_coef(0), prior_coef(1), true).sum();
+  PARAMETER_VECTOR(btt);
+  dll -= dnorm(btt, prior_coef(0), prior_coef(1), true).sum();
+  PARAMETER_VECTOR(tsq);
+  dll -= dnorm(tsq, prior_coef(0), prior_coef(1), true).sum();
   // Transformation
   vector<Type> a = Type(1.0) / (sigma * sigma);
   vector<Type> b = mu * (a + Type(1.0));
@@ -72,10 +83,14 @@ Type objective_function<Type>::operator() ()
 
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
+  Type tmid = 20; // reference age
 
   auto fill_qrs = [&](Type age, Type log_age) {
-    for (int p = 0; p < N_PAR; p++)
-      q_rs[p] = IGx(age, log_age, a[p], b[p]);
+    Type tmid_age = age - tmid;
+    for (int p = 0; p < N_PAR; p++) {
+        Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
+        q_rs[p] = IGx(age, log_age, a[p], b[p]) * exp(eta);
+    }
   };
 
   for (int i = 0; i < A.size(); i++) {
@@ -114,6 +129,9 @@ Type objective_function<Type>::operator() ()
     REPORT(pM_rep);
     REPORT(mu);
     REPORT(sigma);
+    REPORT(itc);
+    REPORT(btt);
+    REPORT(tsq);
     REPORT(indiv_ll);
   }
   return dll;
