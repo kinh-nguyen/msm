@@ -452,11 +452,10 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
-vroom::vroom(here("data/new_d.csv"), col_select = -1) %>% 
+vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>% 
   mutate(
     A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
-    Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
-    across(where(is.numeric), as.integer)
+    Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6)
     ) %>% 
 allot(d)
 
@@ -477,11 +476,10 @@ d %>%
 allot(d1)
 N_PAR = 7
 fit_ct = "CG"
-fitdt <- filter(d1, sex == 'female', cc == fit_ct) %>% 
-  filter(cc == fit_ct, sex == 'female') %>% 
-  group_by(cc, sex, A, Z, start, end, fit) %>%
-  summarise(n = sum(n)) %>% # remove surveys effects
-  ungroup()
+
+filter(d1, sex == "female", cc == fit_ct) %>%
+  filter(cc == fit_ct, sex == "female", sv == 2011) %>%
+allot(fitdt)
 
 tdt <- fitdt %>%
   select(A, Z, start, end, n, fit) %>%
@@ -495,14 +493,16 @@ tdt <- fitdt %>%
 ```{r, prepmodelfit}
 data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
-data$prior_mu <- c(0, 5)
-data$prior_sigma <- c(0, 1)
-data$prior_nu <- c(0, 1)
-data$prior_tau <- c(0, 1)
-data$prior_coef <- c(0, 1)
+data$prior_mu <- c(log(20), 1) # mid age in data
+# https://github.com/kinh-nguyen/naomi/blob/60ad718ad0de201d8449c166d45138e0be2e6a5d/src/tmb.cpp#L254
+data$prior_sigma <- c(0, 2.5)
+data$prior_nu <- c(0, 2.5)
+data$prior_tau <- c(0, 2.5)
+# https://github.com/kinh-nguyen/naomi/blob/60ad718ad0de201d8449c166d45138e0be2e6a5d/src/tmb.cpp#L212
+data$prior_coef <- c(0, 5)
 data <- modifyList(data, as.list(tdt))
 init <- list(
-  log_mu = rep(log(20), N_PAR),
+  mu = rep(log(20), N_PAR),
   log_sigma = rep(log(1), N_PAR),
   log_nu = rep(log(1), N_PAR),
   log_tau = rep(log(1), N_PAR),

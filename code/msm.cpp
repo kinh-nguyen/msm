@@ -3,6 +3,7 @@
 
 #define N_PAR 7
 #define N_Q 7
+#define eps 10. * CppAD::numeric_limits<double>::epsilon()
 
 using Eigen::seqN;
 
@@ -28,28 +29,17 @@ struct PQ {
     };
 };
 
-// https://dlmf.nist.gov/8.2
-// t is time, exp_b0 = alpha, b1 is beta > 0
-// Inverse gamma hazard function
-// https://github.com/gamlss-dev/gamlss/issues/22
-template <class Type>
-Type IGx(Type t, Type log_t, Type a, Type b) {
-  // https://dlmf.nist.gov/8.2
-  Type log_igm = lgamma(a) + log(pgamma(b / t, a, Type(1.0)));
-  Type lhz = a * log(b) - (a + Type(1.0)) * log_t - b / t - log_igm;
-  return exp(lhz);
-}
-
 template<class Type>
-Type SHASHx(Type t, Type mu, Type sigma, Type nu, Type tau) {
-  Type z = (t - mu) / sigma;
-  Type shz = log(z + sqrt(z * z + 1));
-  Type e1 = exp(tau * shz);
-  Type e2 = exp(-nu * shz);
-  Type r = 0.5 * (e1 - e2);
-  Type c = 0.5 * (tau * e1 + nu * e2);
-  Type log_d = log(c) - 0.5 * r * r - 0.5 * log(2.0 * M_PI) - log(sigma) - 0.5 * log(1 + z * z);
-  return exp(log_d);
+Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau) {
+  Type z = (log(t) - mu) / sigma,
+    shz = log(z + sqrt(z * z + 1)),
+    e1 = exp(tau * shz),
+    e2 = exp(-nu * shz),
+    r = 0.5 * (e1 - e2),
+    c = 0.5 * (tau * e1 + nu * e2),
+    log_d = log(c) - 0.5 * r * r - 0.5 * log(2.0 * M_PI) - log(sigma)- 0.5 * log(1 + z * z) - log(t),
+    log_s = log(1 - pnorm(r) + eps); 
+  return exp(log_d - log_s);
 }
 
 template<class Type>
@@ -68,25 +58,25 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
 
-  PARAMETER_VECTOR(log_mu);
+  PARAMETER_VECTOR(mu);
   DATA_VECTOR(prior_mu);
-  vector<Type> mu = exp(log_mu);
-  dll -= dnorm(log_mu, prior_mu(0), prior_mu(1), true).sum();
+  vector<Type> exp_mu = exp(mu);
+  dll -= dnorm(mu, prior_mu(0), prior_mu(1), true).sum();
 
   PARAMETER_VECTOR(log_sigma);
   DATA_VECTOR(prior_sigma);
   vector<Type> sigma = exp(log_sigma);
-  dll -= dnorm(log_sigma, prior_sigma(0), prior_sigma(1), true).sum();
+  dll -= dnorm(sigma, prior_sigma(0), prior_sigma(1), true).sum() + log_sigma.sum();
 
   PARAMETER_VECTOR(log_nu);
   DATA_VECTOR(prior_nu);
   vector<Type> nu = exp(log_nu);
-  dll -= dnorm(log_nu, prior_nu(0), prior_nu(1), true).sum();
+  dll -= dnorm(nu, prior_nu(0), prior_nu(1), true).sum() + log_nu.sum();
   
   PARAMETER_VECTOR(log_tau);
   DATA_VECTOR(prior_tau);
   vector<Type> tau = exp(log_tau);
-  dll -= dnorm(log_tau, prior_tau(0), prior_tau(1), true).sum();
+  dll -= dnorm(tau, prior_tau(0), prior_tau(1), true).sum() + log_tau.sum();
 
   DATA_VECTOR(prior_coef);
   
@@ -108,7 +98,7 @@ Type objective_function<Type>::operator() ()
     Type tmid_age = age - tmid;
     for (int p = 0; p < N_PAR; p++) {
       Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
-      q_rs[p] = SHASHx(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
+      q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
     }
   };
 
@@ -146,7 +136,7 @@ Type objective_function<Type>::operator() ()
     }
     REPORT(qM_rep);
     REPORT(pM_rep);
-    REPORT(mu);
+    REPORT(exp_mu);
     REPORT(sigma);
     REPORT(tau);
     REPORT(nu);
