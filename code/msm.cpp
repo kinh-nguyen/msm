@@ -87,6 +87,11 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(tsq);
   dll -= dnorm(tsq, prior_coef(0), prior_coef(1), true).sum();
 
+  // for VM transition only
+  DATA_MATRIX(B);
+  PARAMETER_VECTOR(bs);
+  vector<Type> vB = B * bs;
+
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
 
@@ -97,8 +102,9 @@ Type objective_function<Type>::operator() ()
   auto fill_qrs = [&](Type age) {
     Type tmid_age = age - tmid;
     for (int p = 0; p < N_PAR; p++) {
-      Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
-      q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
+      Type eta = itc[p];
+      if (p == 1) q_rs[p] = exp(eta + vB[int(asDouble(age))]);
+      else q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
     }
   };
 

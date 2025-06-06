@@ -501,11 +501,17 @@ data$prior_tau <- c(0, 2.5)
 # https://github.com/kinh-nguyen/naomi/blob/60ad718ad0de201d8449c166d45138e0be2e6a5d/src/tmb.cpp#L212
 data$prior_coef <- c(0, 5)
 data <- modifyList(data, as.list(tdt))
+
+library(splines)
+B <- splines::bs(0:data$n_age, degree = 3, intercept = FALSE)
+data$B <- B
+
 init <- list(
   mu = rep(log(20), N_PAR),
   log_sigma = rep(log(1), N_PAR),
   log_nu = rep(log(1), N_PAR),
   log_tau = rep(log(1), N_PAR),
+  bs = rnorm(ncol(B)),
   itc = rep(0, N_PAR),
   btt = c(0, 0, 0, 0, 0, 0, 0),
   tsq = c(0, 0, 0, 0, 0, 0, 0)
