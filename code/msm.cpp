@@ -87,6 +87,28 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(tsq);
   dll -= dnorm(tsq, prior_coef(0), prior_coef(1), true).sum();
 
+  // rw1
+  DATA_MATRIX(Q);
+  PARAMETER_VECTOR(m_vm);
+  PARAMETER(log_qvm);
+  Type qvm = exp(log_qvm);
+  dll -= dnorm(qvm, Type(0), Type(1), true) + log_qvm;
+  dll += ktools::rw(m_vm, Q, qvm, Type(1), true, true);
+
+  DATA_MATRIX(Qvx);
+  PARAMETER_VECTOR(m_vx);
+  PARAMETER(log_qvx);
+  Type qvx = exp(log_qvx);
+  dll -= dnorm(qvx, Type(0), Type(1), true) + log_qvx;
+  dll += ktools::rw(m_vx, Qvx, qvx, Type(1), true, true);
+  
+  DATA_MATRIX(Qxm);
+  PARAMETER_VECTOR(m_xm);
+  PARAMETER(log_qxm);
+  Type qxm = exp(log_qxm);
+  dll -= dnorm(qxm, Type(0), Type(1), true) + log_qxm;
+  dll += ktools::rw(m_xm, Qxm, qxm, Type(1), true, true);
+
   PQ<Type> KM;
   vector<Type> q_rs(N_PAR);
 
@@ -95,21 +117,33 @@ Type objective_function<Type>::operator() ()
   Type tmid = 20; // reference age
 
   auto fill_qrs = [&](Type age) {
+  {
     Type tmid_age = age - tmid;
-    for (int p = 0; p < N_PAR; p++) {
+    int ida = CppAD::Integer(age);
+    for (int p = 0; p < N_PAR; p++)
+    {
       Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
-      q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
+      if (p == 1)
+        q_rs[p] = exp(eta + m_vm[ida]);
+      else if (p == 0)
+        q_rs[p] = exp(eta + m_vx[ida]);
+      else if (p == 2)
+        q_rs[p] = exp(eta + m_xm[ida]);
+      else
+        q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
     }
   };
 
-  for (int i = 0; i < A.size(); i++) {
+  for (int i = 0; i < A.size(); i++)
+  {
     Type ll = 0;
     fill_qrs(dstart[i]);
-    if (fit[i] == 0) 
-      ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]); 
-    else if (fit[i] == 1) 
-      ll = -n[i] * KM(q_rs, true, false)(A[i], Z[i]); 
-    else if (fit[i] == 2) {
+    if (fit[i] == 0)
+      ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]);
+    else if (fit[i] == 1)
+      ll = -n[i] * KM(q_rs, true, false)(A[i], Z[i]);
+    else if (fit[i] == 2)
+    {
       matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = istart[i]; t < end[i]; t++)
       {
@@ -121,15 +155,18 @@ Type objective_function<Type>::operator() ()
     dll += ll;
     indiv_ll[i] = ll;
   }
-  
-  SIMULATE {
+
+  SIMULATE
+  {
     array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
-    for (int s = 1; s < n_age; ++s) {
+    for (int s = 1; s < n_age; ++s)
+    {
       fill_qrs(Type(s));
       matrix<Type> qM_mat = KM(q_rs, false, true);
       matrix<Type> pM_mat = KM(q_rs, false, false);
       for (int i = 0; i < N_Q; ++i)
-        for (int j = 0; j < N_Q; ++j) {
+        for (int j = 0; j < N_Q; ++j)
+        {
           qM_rep(i, j, s) = qM_mat(i, j);
           pM_rep(i, j, s) = pM_mat(i, j);
         }
@@ -140,6 +177,8 @@ Type objective_function<Type>::operator() ()
     REPORT(sigma);
     REPORT(tau);
     REPORT(nu);
+    REPORT(m_vm);
+    REPORT(qvm);
     REPORT(itc);
     REPORT(btt);
     REPORT(tsq);
@@ -147,3 +186,4 @@ Type objective_function<Type>::operator() ()
   }
   return dll;
 }
+

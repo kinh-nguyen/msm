@@ -126,6 +126,7 @@ d <- readRDS(here('data/cleaned.rds'))
 library(haven)
 d %>% 
     select(lab, sex, X = afs, M = marriage_age, age, u = n_union, ms = marital_status, weights) %>%
+    filter(weights != 0) %>% 
     group_by(lab) %>%
     mutate(
         weights = weights / 10^6, # https://www.dhsprogram.com/data/Guide-to-DHS-Statistics/index.htm#t=Analyzing_DHS_Data.htm&rhsearch=v005&rhhlterm=v005&rhsyns=%20
