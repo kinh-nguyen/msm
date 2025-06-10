@@ -125,7 +125,15 @@ Calculate needed indcator for likelihood
 d <- readRDS(here('data/cleaned.rds'))
 library(haven)
 d %>% 
-    select(lab, sex, X = afs, M = marriage_age, age, u = n_union, ms = marital_status) %>%
+    select(lab, sex, X = afs, M = marriage_age, age, u = n_union, ms = marital_status, weights) %>%
+    group_by(lab) %>%
+    mutate(
+        weights = weights / 10^6, # https://www.dhsprogram.com/data/Guide-to-DHS-Statistics/index.htm#t=Analyzing_DHS_Data.htm&rhsearch=v005&rhhlterm=v005&rhsyns=%20
+        n_eff = sum(weights)^2 / sum(weights^2), # effective sample size
+        kish = weights * n_eff / sum(weights), # Kish weights
+    ) %>%
+    ungroup() %>%
+    select(-weights, -n_eff) %>%
     mutate(
         id = 1:n(),
         cc = substr(lab, 1, 2),
@@ -145,16 +153,16 @@ d %>%
         X = if_else(X == 0, NA_real_, X),
         M = if_else(M == 0, NA_real_, M),
         # interval censored
-        norep = if_else(M > 0 & ms != 'M', T, F, missing = F),
+        norep = if_else(M > 0 & ms != "M", T, F, missing = F),
         sameYear = if_else(age == M, T, F, missing = F)
     ) %>%
     pivot_longer(c(V, X, M, age)) %>%
-    mutate(name = if_else(name == 'age', ms, name)) %>%
+    mutate(name = if_else(name == "age", ms, name)) %>%
 allot(tmp)
  
 # Too big the dataset, do sequential insteads
 sv <- unique(tmp$lab)
-dir.create(here('data/sv'))
+dir.create(here('data/svw'), F)
 
 parallel::mclapply(sv, function(i) {
     cat(i, "...")
@@ -179,10 +187,16 @@ parallel::mclapply(sv, function(i) {
             start = if_else(sameYear & row_number() == n(), value, start)
         ) %>% 
         ungroup() %>%
-        filter(!(!norep & is.na(value2))) %>% # current age forward - not observed yet
-        count(cc, sv, A, Z, start, end) %>%
-        write.csv(here("data/sv", paste0(i, ".csv")))
-    }, mc.cores = 6)
+        filter(!(!norep & is.na(value2))) %>%
+        # current age forward - not observed yet
+        group_by(cc, sv, sex, A, Z, start, end) %>%
+        summarise( n = sum(kish)) %>%
+        ungroup() %>% 
+        write.csv(here("data/svw", paste0(i, ".csv")))
+},
+mc.cores = 6
+) %>% invisible()
+
 
 new_d <- vroom::vroom(list.files(here('data/sv'), full.names = T), col_select = -1)
 # add tests later if found

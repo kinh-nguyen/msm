@@ -391,11 +391,10 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
-vroom::vroom(here("data/new_d.csv"), col_select = -1) %>% 
+vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>% 
   mutate(
     A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
-    Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
-    across(where(is.numeric), as.integer)
+    Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6)
     ) %>% 
 allot(d)
 
@@ -416,13 +415,19 @@ d %>%
 allot(d1)
 N_PAR = 7
 fit_ct = "CG"
-fitdt <- filter(d1, sex == 'female', cc == fit_ct) %>% 
-  filter(cc == fit_ct, sex == 'female') %>% 
-  group_by(cc, sex, A, Z, start, end, fit) %>%
-  summarise(n = sum(n)) %>% # remove surveys effects
-  ungroup()
+
+filter(d1, sex == "female", cc == fit_ct) %>%
+  filter(cc == fit_ct, sex == "female", sv == 2011) %>%
+allot(fitdt)
 
 tdt <- fitdt %>% select(A, Z, start, end, n, fit)
+tdt <- fitdt %>%
+  select(A, Z, start, end, n, fit) %>%
+  mutate(
+    dstart = as.double(start),
+    istart = start,
+  ) %>%
+  filter(dstart > 0)
 ```
 
 ```{r, prepmodelfit}
@@ -442,12 +447,12 @@ library(TMB)
 TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
 base::dyn.load(TMB::dynlib("code/msm"))
 invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
-obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = TRUE)
-sml <- obj$simulate() 
 TMB::openmp(20)
 
-obj <- TMB::MakeADFun(data, init, DLL = "msm", silent = FALSE)
-fit <- nlminb(obj$par, obj$fn, obj$gr, control = list(trace = 0, maxit = 1000))
+fit <- nlminb(
+  obj$env$last.par.best, obj$fn, obj$gr,
+  control = list(trace = 0, iter.max = 1000),
+)
 fit
 rp <- obj$simulate(obj$env$last.par.best)
 dir.create(here('fit'), showWarnings = FALSE)
@@ -481,12 +486,12 @@ pivot_longer(-start)
 
 qe = tibble(
   start = 0:51,
-  VV = Q_yearly[1,1,],
+  VV = -Q_yearly[1,1,],
   VX = Q_yearly[1,2,],
   VM = Q_yearly[1,3,],
-  XX = Q_yearly[2,2,],
+  XX = -Q_yearly[2,2,],
   XM = Q_yearly[2,3,],
-  MM = Q_yearly[3,3,],
+  MM = -Q_yearly[3,3,],
   MS = Q_yearly[3,4,],
   MD = Q_yearly[3,5,],
   MW = Q_yearly[3,6,],
@@ -539,19 +544,22 @@ pd %>%
   ), 
     p_empirical = ifelse(A == "M", NA_real_, p_empirical),
   ) %>%
-  # filter(A != 'M') %>%
+  filter(A != "M") %>%
+  filter(start > 0) %>% 
   ggplot(aes(start, p_empirical)) +
   geom_point(aes(size = N_A_start_duration, color = factor(name)), shape = 21) +
   geom_line(aes(y = value, color = factor(name))) +
-  ggh4x::facet_grid2(cols = vars(group), labeller = labeller(group = function(x) {
-    recode(x, `1` = "Currently virgin", `2`= "Current sexual debuted", `3`= "Currently married")
-  })) +
-  geom_vline(xintercept = 40, linetype = 'dashed', color = 'grey50') +
+  ggh4x::facet_grid2(
+    cols = vars(group),
+    scales = "free_y",
+    labeller = labeller(group = function(x) {
+      recode(x, `1` = "Currently virgin", `2` = "Current sexual debuted", `3` = "Currently married")
+    })
+  ) +
   scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, .1)) +
   guides(size = FALSE) +
   labs(x = 'Age', y = 'Transition probability', color = 'Transition') +
-  k.theme +
-  k.legend(.925, .5, dir = "vertical")
+  k.theme + k.legend(.925, .5, dir = "vertical")
 ```
 
 ::: {#ref}
