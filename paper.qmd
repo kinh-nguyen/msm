@@ -452,138 +452,115 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
-vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>% 
+vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
   mutate(
-    A = case_when(A == 'V' ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == 'S' ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
-    Z = case_when(Z == 'V' ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == 'S' ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6)
-    ) %>% 
-allot(d)
-
-d %>% 
+    A = case_when(A == "V" ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == "S" ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
+    Z = case_when(Z == "V" ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == "S" ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
+    # across(where(is.numeric), as.integer)
+  ) %>%
   mutate(
     fit = case_when(
-      # Q(t,X)[A,Z]: observed transition at start time, within a year, except
-      # remarried is current state
       A != Z & (end - start == 1) & Z != 6 ~ 0,
-      # P(t,X)[A,Z], A == Z, remain the same
       A == Z & (end - start == 1) ~ 1,
-      # (P(start,X) x P(start+1,X) x ... x P(end, X))[A,Z]: unobserved
-      # transition, matrix multiplication
-      # A != Z & ((end - start > 1) | Z == 6) ~ 2,
       otherwise ~ 2
     )
-  )  %>% 
-allot(d1)
-N_PAR = 7
-fit_ct = "CG"
-
-filter(d1, sex == "female", cc == fit_ct) %>%
-  filter(cc == fit_ct, sex == "female", sv == 2011) %>%
-allot(fitdt)
-
-tdt <- fitdt %>%
-  select(A, Z, start, end, n, fit) %>%
+  ) %>%
+  filter(cc == "CG", sex == "female", sv == 2011) %>%
+  select(A, Z, start, end, tx, tm, n, fit) %>%
   mutate(
     dstart = as.double(start),
     istart = start,
   ) %>%
-  filter(dstart > 0)
+  filter(dstart > 0) -> tdt
+```
+
+```{r}
+# predicting data by age for average duration
+tdt %>%
+  filter(A == 1 | A == 2) %>%
+  group_by(start) %>%
+  summarise(
+    tx = mean(tx),
+    tm = mean(tm),
+    .groups = "drop"
+  ) %>%
+  bind_rows(
+    anti_join(tibble(
+      start = 1:(max(tdt$end) + 1),
+      tx = 0,
+      tm = 0
+    ), ., by = "start")
+  ) %>%
+  arrange(start) %>%
+  mutate(gap = lead(start) - start) %>%
+  allot(sim_data)
 ```
 
 ```{r, prepmodelfit}
+N_PAR = 7
 data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
-data$prior_mu <- c(log(20), 1) # mid age in data
+data$prior_mu <- c(log(16), 2.5) # mid age in data
 # https://github.com/kinh-nguyen/naomi/blob/60ad718ad0de201d8449c166d45138e0be2e6a5d/src/tmb.cpp#L254
 data$prior_sigma <- c(0, 2.5)
 data$prior_nu <- c(0, 2.5)
 data$prior_tau <- c(0, 2.5)
 # https://github.com/kinh-nguyen/naomi/blob/60ad718ad0de201d8449c166d45138e0be2e6a5d/src/tmb.cpp#L212
-data$prior_coef <- c(0, 5)
+data$prior_coef <- c(0, 2.5)
+data$sim_data = as.matrix(sim_data)
 data <- modifyList(data, as.list(tdt))
-
-data$Q <- INLA:::inla.rw(data$n_age, order = 1, scale.model = TRUE) %>% as.matrix()
-data$Qvx <- INLA:::inla.rw(data$n_age, order = 1, scale.model = TRUE) %>% as.matrix()
-data$Qxm <- INLA:::inla.rw(data$n_age, order = 1, scale.model = TRUE) %>% as.matrix()
 init <- list(
   mu = rep(log(20), N_PAR),
-  log_sigma = rep(log(1), N_PAR),
-  log_nu = rep(log(1), N_PAR),
-  log_tau = rep(log(1), N_PAR),
+  log_sigma = rep(log(.5), N_PAR),
+  nu = rep(-.1, N_PAR),
+  log_tau = rep(log(0.1), N_PAR),
   itc = rep(0, N_PAR),
-  btt = c(0, 0, 0, 0, 0, 0, 0),
-  tsq = c(0, 0, 0, 0, 0, 0, 0)
-  m_vm = rep(0, data$n_age),
-  log_qvm = log(0.1),
-  m_vx = rep(0, data$n_age),
-  log_qvx = log(0.1),
-  m_xm = rep(0, data$n_age),
-  log_qxm = log(0.1)
+  b_tx = 0,
+  b_tm = 0
 )
 ```
 
 ```{r}
 #| eval: false
 library(TMB)
+ktools::tmb_unload("msm")
 TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
 base::dyn.load(TMB::dynlib("code/msm"))
 invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
 TMB::openmp(20)
 obj <- TMB::MakeADFun(
-  data, init, 
-  map = tmb_fixit(init, c('tsq', 'btt')),
-  DLL = "msm", silent = FALSE
+  data, init,
+  map = list(
+    mu = c(1, 2, 3, 4, 4, 4, 5) %>% factor(),
+    log_sigma = c(1, 2, 3, 4, 4, 4, 5) %>% factor(),
+    nu = c(1, 2, 3, 4, 4, 4, 5) %>% factor(),
+    log_tau = c(1, 2, 3, 4, 4, 4, 5) %>% factor(),
+    itc = c(1, 2, 3, 4, 4, 4, 5) %>% factor()
+    # itc = c(1, 2, 3, 4, NA, NA, NA) %>% factor()
+    # itc = rep(NA, N_PAR) %>% factor()
+  ),
+  DLL = "msm", silent = FALSE, LaplaceNonZeroGradient = 0
 )
 
 fit <- nlminb(
   obj$env$last.par.best, obj$fn, obj$gr,
-  control = list(trace = 0, iter.max = 1000, eval.max = 1000, abs.tol = 1e-20),
+  control = list(trace = 0, eval.max = 1000, abs.tol = 1e-12)
 )
 fit
+fit$par %>% name2list()
 rp <- obj$simulate(obj$env$last.par.best)
+
+tibble(
+  mu = rp$exp_mu,
+  sigma = rp$sigma,
+  nu = rp$nu,
+  tau = rp$tau
+)
+plott(rp$PP[1,2,2:51])
+plott(rp$PP[1,3,2:51])
+plott(rp$PP[2,3,2:51])
 dir.create(here('fit'), showWarnings = FALSE)
 saveRDS(rp, here('fit/testMW.rds'))
-```
-
-```{r, loadResult}
-rp <- readRDS(here('fit/testMW.rds'))
-
-Q_yearly = rp$qM_rep
-P_yearly = rp$pM_rep
-P_cum <- array(NA, dim = dim(P_yearly))
-P_cum[,,1] <- diag(7)
-for (k in 2:dim(P_yearly)[3]) 
-  P_cum[,,k] <- P_cum[,,k-1] %*% P_yearly[,,k]
-
-pe = tibble(
-  start = 0:51,
-  VV = P_yearly[1,1,],
-  VX = P_yearly[1,2,],
-  VM = P_yearly[1,3,],
-  XX = P_yearly[2,2,],
-  XM = P_yearly[2,3,],
-  MM = P_yearly[3,3,],
-  MS = P_yearly[3,4,],
-  MD = P_yearly[3,5,],
-  MW = P_yearly[3,6,],
-  MR = P_yearly[4,7,],
-) %>% 
-pivot_longer(-start)
-
-qe = tibble(
-  start = 0:51,
-  VV = -Q_yearly[1,1,],
-  VX = Q_yearly[1,2,],
-  VM = Q_yearly[1,3,],
-  XX = -Q_yearly[2,2,],
-  XM = Q_yearly[2,3,],
-  MM = -Q_yearly[3,3,],
-  MS = Q_yearly[3,4,],
-  MD = Q_yearly[3,5,],
-  MW = Q_yearly[3,6,],
-  MR = Q_yearly[4,7,],
-) %>% 
-pivot_longer(-start)
 ```
 
 We computed the 1-year transition probabilities by age for the different marital
@@ -605,21 +582,46 @@ empirical estimates.
 #| fig-width: 7
 #| fig-height: 4
 #| out-width: "100%"
-fitdt %>% 
-  mutate(duration = end - start) %>% 
-  group_by(A, start, duration) %>%
-  summarise(N_A_start_duration = sum(n), .groups = 'drop') %>% 
-allot(at_risk)
+rp <- readRDS(here('fit/testMW.rds'))
+str(rp)
+P_yearly = rp$PP
+P_cum <- array(NA, dim = dim(P_yearly))
+P_cum[,,1] <- diag(7)
+for (k in 2:dim(P_yearly)[3]) 
+  P_cum[,,k] <- P_cum[,,k-1] %*% P_yearly[,,k]
 
-fitdt %>% 
-  mutate(duration = end - start) %>% 
-  left_join(at_risk, by = c("A", "start", "duration")) %>%
-  mutate(p_empirical = n / N_A_start_duration) %>% 
+pe = tibble(
+  start = 0:51,
+  VV = P_yearly[1,1,],
+  VX = P_yearly[1,2,],
+  VM = P_yearly[1,3,],
+  XX = P_yearly[2,2,],
+  XM = P_yearly[2,3,],
+  MM = P_yearly[3,3,],
+  MS = P_yearly[3,4,],
+  MD = P_yearly[3,5,],
+  MW = P_yearly[3,6,],
+  MR = P_yearly[4,7,],
+) %>% 
+pivot_longer(-start)
+
+tdt %>%
+  filter(A < 2, Z <= 2) %>%
+  group_by(A, start, tx) %>%
+  summarise(n_risk = sum(n), .groups = "drop") %>%
+  allot(at_risk)
+
+tdt %>%
+  filter(A < 2, Z <= 2) %>%
+  group_by(A, Z, start, tx) %>%
+  summarise(n_move = sum(n), .groups = "drop") %>%
+  left_join(at_risk, by = c("A", "start", "tx")) %>%
+  mutate(p_empirical = n_move / n_risk) %>% 
   mutate(
     A = case_when(A == 0 ~ 'V', A == 1 ~ 'X', A == 2 ~ "M", A == 3 ~ "S", A == 4 ~ "D", A == 5 ~ "W", A == 6 ~ 'R', otherwise ~ NA_character_),
     Z = case_when(Z == 0 ~ 'V', Z == 1 ~ 'X', Z == 2 ~ "M", Z == 3 ~ "S", Z == 4 ~ "D", Z == 5 ~ "W", Z == 6 ~ 'R', otherwise ~ NA_character_),
     name = paste0(A,Z)) %>% 
-  left_join(pe, by = c("start", "name")) %>% 
+  full_join(pe, by = c("start", "name")) %>% 
 allot(pd)
 
 pd %>%
@@ -633,7 +635,7 @@ pd %>%
   filter(A != "M") %>%
   filter(start > 0) %>% 
   ggplot(aes(start, p_empirical)) +
-  geom_point(aes(size = N_A_start_duration, color = factor(name)), shape = 21) +
+  geom_point(aes(size = n_risk, color = factor(name)), shape = 21) +
   geom_line(aes(y = value, color = factor(name))) +
   ggh4x::facet_grid2(
     cols = vars(group),

@@ -11,6 +11,12 @@ using namespace Eigen;
   
 #define _eps 1e-8 // An alternative limit argument for the first-order IGRMF
 
+template <class Type>
+Type max2(Type x, Type y)
+{
+  return 0.5 * (CppAD::abs(x - y) + x + y);
+}
+
 // Constraint space-time interaction if use a vector input
 template <class Type>
 Type constraint2D(

@@ -3,7 +3,7 @@
 
 #define N_PAR 7
 #define N_Q 7
-#define eps 10. * CppAD::numeric_limits<double>::epsilon()
+#define eps CppAD::numeric_limits<double>::epsilon()
 
 using Eigen::seqN;
 
@@ -29,17 +29,19 @@ struct PQ {
     };
 };
 
-template<class Type>
-Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau) {
-  Type z = (log(t) - mu) / sigma,
-    shz = log(z + sqrt(z * z + 1)),
-    e1 = exp(tau * shz),
-    e2 = exp(-nu * shz),
-    r = 0.5 * (e1 - e2),
-    c = 0.5 * (tau * e1 + nu * e2),
-    log_d = log(c) - 0.5 * r * r - 0.5 * log(2.0 * M_PI) - log(sigma)- 0.5 * log(1 + z * z) - log(t),
-    log_s = log(1 - pnorm(r) + eps); 
-  return exp(log_d - log_s);
+template <class Type>
+Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau)
+{
+  Type x = log(t),
+       z = (x - mu) / sigma,
+       tau_asinh_nu = tau * log(z + sqrt(z * z + 1)) - nu,
+       c = cosh(tau_asinh_nu),
+       r = sinh(tau_asinh_nu);
+  // SHASHo2 with sigma' = sigma . tau
+  Type logres = -log(sigma) - 0.5 * log(2 * M_PI) - 0.5 * log(1 + (z * z)) + log(c) - 0.5 * (r * r) - x;
+  Type logp = log(1.0 - pnorm(r) + eps);
+  Type log_hz = logres - logp;
+  return log_hz;
 }
 
 template<class Type>
@@ -52,11 +54,14 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(Z);
   DATA_IVECTOR(istart);
   DATA_VECTOR(dstart);
-  vector<Type> log_t = log(dstart);
   DATA_IVECTOR(end);
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
+  DATA_VECTOR(tx);
+  DATA_VECTOR(tm);
+
+  DATA_MATRIX(sim_data);
 
   PARAMETER_VECTOR(mu);
   DATA_VECTOR(prior_mu);
@@ -68,10 +73,9 @@ Type objective_function<Type>::operator() ()
   vector<Type> sigma = exp(log_sigma);
   dll -= dnorm(sigma, prior_sigma(0), prior_sigma(1), true).sum() + log_sigma.sum();
 
-  PARAMETER_VECTOR(log_nu);
+  PARAMETER_VECTOR(nu);
   DATA_VECTOR(prior_nu);
-  vector<Type> nu = exp(log_nu);
-  dll -= dnorm(nu, prior_nu(0), prior_nu(1), true).sum() + log_nu.sum();
+  dll -= dnorm(nu, prior_nu(0), prior_nu(1), true).sum();
   
   PARAMETER_VECTOR(log_tau);
   DATA_VECTOR(prior_tau);
@@ -82,106 +86,85 @@ Type objective_function<Type>::operator() ()
   
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, prior_coef(0), prior_coef(1), true).sum();
-  PARAMETER_VECTOR(btt);
-  dll -= dnorm(btt, prior_coef(0), prior_coef(1), true).sum();
-  PARAMETER_VECTOR(tsq);
-  dll -= dnorm(tsq, prior_coef(0), prior_coef(1), true).sum();
 
-  // rw1
-  DATA_MATRIX(Q);
-  PARAMETER_VECTOR(m_vm);
-  PARAMETER(log_qvm);
-  Type qvm = exp(log_qvm);
-  dll -= dnorm(qvm, Type(0), Type(1), true) + log_qvm;
-  dll += ktools::rw(m_vm, Q, qvm, Type(1), true, true);
-
-  DATA_MATRIX(Qvx);
-  PARAMETER_VECTOR(m_vx);
-  PARAMETER(log_qvx);
-  Type qvx = exp(log_qvx);
-  dll -= dnorm(qvx, Type(0), Type(1), true) + log_qvx;
-  dll += ktools::rw(m_vx, Qvx, qvx, Type(1), true, true);
-  
-  DATA_MATRIX(Qxm);
-  PARAMETER_VECTOR(m_xm);
-  PARAMETER(log_qxm);
-  Type qxm = exp(log_qxm);
-  dll -= dnorm(qxm, Type(0), Type(1), true) + log_qxm;
-  dll += ktools::rw(m_xm, Qxm, qxm, Type(1), true, true);
+  PARAMETER(b_tx);
+  PARAMETER(b_tm);
+  dll -= dnorm(b_tx, Type(0), Type(1), true);
+  dll -= dnorm(b_tm, Type(0), Type(1), true);
 
   PQ<Type> KM;
-  vector<Type> q_rs(N_PAR);
+  vector<Type> qrs(N_PAR);
 
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
-  Type tmid = 20; // reference age
 
-  auto fill_qrs = [&](Type age) {
+  auto fill_qrs = [&](Type age, int i)
   {
-    Type tmid_age = age - tmid;
-    int ida = CppAD::Integer(age);
     for (int p = 0; p < N_PAR; p++)
     {
-      Type eta = itc[p] + btt[p] * tmid_age + tsq[p] * tmid_age * tmid_age;
-      if (p == 1)
-        q_rs[p] = exp(eta + m_vm[ida]);
-      else if (p == 0)
-        q_rs[p] = exp(eta + m_vx[ida]);
-      else if (p == 2)
-        q_rs[p] = exp(eta + m_xm[ida]);
-      else
-        q_rs[p] = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]) * exp(eta);
+      Type lhz = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]);
+      qrs[p] = exp(itc[p] + lhz);
+      if (p == 2) 
+        qrs[p] *= exp(b_tx * tx[i]); // time since debuted
+      if (p > 2)
+        qrs[p] *= exp(b_tm * tm[i]); // time since married
     }
   };
 
+  matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
+  Type ll_val = 0;
+
   for (int i = 0; i < A.size(); i++)
   {
-    Type ll = 0;
-    fill_qrs(dstart[i]);
     if (fit[i] == 0)
-      ll = -n[i] * KM(q_rs, true, true)(A[i], Z[i]);
+    {
+      fill_qrs(dstart[i], i);
+      Qm = KM(qrs, false, true);
+      ll_val = log(Qm(A[i], Z[i]) + eps);
+    }
     else if (fit[i] == 1)
-      ll = -n[i] * KM(q_rs, true, false)(A[i], Z[i]);
+    {
+      fill_qrs(dstart[i], i);
+      Pm = KM(qrs, false, false);
+      ll_val = log(Pm(A[i], Z[i]) + eps);
+    }
     else if (fit[i] == 2)
     {
-      matrix<Type> cumP = matrix<Type>::Identity(N_Q, N_Q);
+      cumPm = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = istart[i]; t < end[i]; t++)
       {
-        fill_qrs(Type(t));
-        cumP = cumP * KM(q_rs, false, false);
+        fill_qrs(Type(t), i);
+        Pm = KM(qrs, false, false);
+        cumPm = cumPm * Pm;
       }
-      ll = -n[i] * log(cumP(A[i], Z[i]));
+      ll_val = log(cumPm(A[i], Z[i]) + eps);
     }
-    dll += ll;
-    indiv_ll[i] = ll;
+    dll -= n[i] * ll_val;
+    indiv_ll[i] = -n[i] * ll_val;
   }
 
   SIMULATE
   {
-    array<Type> qM_rep(N_Q, N_Q, n_age), pM_rep(N_Q, N_Q, n_age);
-    for (int s = 1; s < n_age; ++s)
-    {
-      fill_qrs(Type(s));
-      matrix<Type> qM_mat = KM(q_rs, false, true);
-      matrix<Type> pM_mat = KM(q_rs, false, false);
-      for (int i = 0; i < N_Q; ++i)
-        for (int j = 0; j < N_Q; ++j)
-        {
-          qM_rep(i, j, s) = qM_mat(i, j);
-          pM_rep(i, j, s) = pM_mat(i, j);
+    int n_sim = sim_data.rows();
+    array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
+    for (int i = 0; i < n_sim; i++) {
+        for (int p = 0; p < N_PAR; p++) {
+          Type lhz = logSHASHz(sim_data(i, 0), mu[p], sigma[p], nu[p], tau[p]);
+          qrs[p] = exp(itc[p] + lhz);
+          if (p == 2)
+            qrs[p] *= exp(b_tx * sim_data(i, 1)); // time since debuted
+          if (p > 2)
+            qrs[p] *= exp(b_tm * sim_data(i, 2)); // time since married
         }
+        PP.col(i) = KM(qrs, false, false);
     }
-    REPORT(qM_rep);
-    REPORT(pM_rep);
+   
+    REPORT(PP);
     REPORT(exp_mu);
     REPORT(sigma);
     REPORT(tau);
     REPORT(nu);
-    REPORT(m_vm);
-    REPORT(qvm);
     REPORT(itc);
-    REPORT(btt);
-    REPORT(tsq);
     REPORT(indiv_ll);
   }
   return dll;
