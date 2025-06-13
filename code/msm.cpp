@@ -58,37 +58,58 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
+  
   DATA_VECTOR(tx);
   DATA_VECTOR(tm);
 
   DATA_MATRIX(sim_data);
 
-  PARAMETER_VECTOR(mu);
-  DATA_VECTOR(prior_mu);
-  vector<Type> exp_mu = exp(mu);
-  dll -= dnorm(mu, prior_mu(0), prior_mu(1), true).sum();
+  DATA_MATRIX(Mspline);
+  PARAMETER_VECTOR(VX);
+  PARAMETER_VECTOR(VM);
+  PARAMETER_VECTOR(XM);
+  PARAMETER_VECTOR(MS);
+  PARAMETER_VECTOR(MD);
+  PARAMETER_VECTOR(MW);
+  PARAMETER_VECTOR(UR);
 
-  PARAMETER_VECTOR(log_sigma);
-  DATA_VECTOR(prior_sigma);
-  vector<Type> sigma = exp(log_sigma);
-  dll -= dnorm(sigma, prior_sigma(0), prior_sigma(1), true).sum() + log_sigma.sum();
+  DATA_MATRIX(penalty);
 
-  PARAMETER_VECTOR(nu);
-  DATA_VECTOR(prior_nu);
-  dll -= dnorm(nu, prior_nu(0), prior_nu(1), true).sum();
-  
-  PARAMETER_VECTOR(log_tau);
-  DATA_VECTOR(prior_tau);
-  vector<Type> tau = exp(log_tau);
-  dll -= dnorm(tau, prior_tau(0), prior_tau(1), true).sum() + log_tau.sum();
+  vector<Type>
+      VXw = exp(VX) / exp(VX).sum(),
+      VMw = exp(VM) / exp(VM).sum(),
+      XMw = exp(XM) / exp(XM).sum(),
+      MSw = exp(MS) / exp(MS).sum(),
+      MDw = exp(MD) / exp(MD).sum(),
+      MWw = exp(MW) / exp(MW).sum(),
+      URw = exp(UR) / exp(UR).sum(),
+      // splines
+      VXv = Mspline * VXw,
+      VMv = Mspline * VMw,
+      XMv = Mspline * XMw,
+      MSv = Mspline * MSw,
+      MDv = Mspline * MDw,
+      MWv = Mspline * MWw,
+      URv = Mspline * URw;
 
-  DATA_VECTOR(prior_coef);
-  
-  PARAMETER_VECTOR(itc);
-  dll -= dnorm(itc, prior_coef(0), prior_coef(1), true).sum();
+  // quad-form
+  Type
+      VXp = (VX * (penalty * VX)).sum(),
+      VMp = (VM * (penalty * VM)).sum(),
+      XMp = (XM * (penalty * XM)).sum(),
+      MSp = (MS * (penalty * MS)).sum(),
+      MDp = (MD * (penalty * MD)).sum(),
+      MWp = (MW * (penalty * MW)).sum(),
+      URp = (UR * (penalty * UR)).sum();
+
+  PARAMETER(log_k); // smooth penalty
+  Type k(exp(log_k));
+  dll -= dnorm(k, Type(0), Type(1), true) + log_k;
+  dll += 0.5 * k * (VXp + VMp + XMp + MSp + MDp + MWp + URp);
 
   PARAMETER(b_tx);
   PARAMETER(b_tm);
+
   dll -= dnorm(b_tx, Type(0), Type(1), true);
   dll -= dnorm(b_tm, Type(0), Type(1), true);
 
@@ -98,17 +119,15 @@ Type objective_function<Type>::operator() ()
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
-  auto fill_qrs = [&](Type age, int i)
+  auto fill_qrs = [&](int age, int i)
   {
-    for (int p = 0; p < N_PAR; p++)
-    {
-      Type lhz = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]);
-      qrs[p] = exp(itc[p] + lhz);
-      if (p == 2) 
-        qrs[p] *= exp(b_tx * tx[i]); // time since debuted
-      if (p > 2)
-        qrs[p] *= exp(b_tm * tm[i]); // time since married
-    }
+    qrs[0] = VXv[age];
+    qrs[1] = VMv[age];
+    qrs[2] = XMv[age] * exp(b_tx * tx[i]);
+    qrs[3] = MSv[age] * exp(b_tm * tm[i]);
+    qrs[4] = MDv[age] * exp(b_tm * tm[i]);
+    qrs[5] = MWv[age] * exp(b_tm * tm[i]);
+    qrs[6] = URv[age];
   };
 
   matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
@@ -118,13 +137,13 @@ Type objective_function<Type>::operator() ()
   {
     if (fit[i] == 0)
     {
-      fill_qrs(dstart[i], i);
+      fill_qrs(istart[i], i);
       Qm = KM(qrs, false, true);
       ll_val = log(Qm(A[i], Z[i]) + eps);
     }
     else if (fit[i] == 1)
     {
-      fill_qrs(dstart[i], i);
+      fill_qrs(istart[i], i);
       Pm = KM(qrs, false, false);
       ll_val = log(Pm(A[i], Z[i]) + eps);
     }
@@ -133,7 +152,7 @@ Type objective_function<Type>::operator() ()
       cumPm = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = istart[i]; t < end[i]; t++)
       {
-        fill_qrs(Type(t), i);
+        fill_qrs(t, i);
         Pm = KM(qrs, false, false);
         cumPm = cumPm * Pm;
       }
@@ -148,24 +167,18 @@ Type objective_function<Type>::operator() ()
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
     for (int i = 0; i < n_sim; i++) {
-        for (int p = 0; p < N_PAR; p++) {
-          Type lhz = logSHASHz(sim_data(i, 0), mu[p], sigma[p], nu[p], tau[p]);
-          qrs[p] = exp(itc[p] + lhz);
-          if (p == 2)
-            qrs[p] *= exp(b_tx * sim_data(i, 1)); // time since debuted
-          if (p > 2)
-            qrs[p] *= exp(b_tm * sim_data(i, 2)); // time since married
-        }
-        PP.col(i) = KM(qrs, false, false);
+      int age = CppAD::Integer(sim_data(i, 0));
+      qrs[0] = VXv[age];
+      qrs[1] = VMv[age];
+      qrs[2] = XMv[age] * exp(b_tx * sim_data(i, 1));
+      qrs[3] = MSv[age] * exp(b_tm * sim_data(i, 2));
+      qrs[4] = MDv[age] * exp(b_tm * sim_data(i, 2));
+      qrs[5] = MWv[age] * exp(b_tm * sim_data(i, 2));
+      qrs[6] = URv[age];
+      PP.col(i) = KM(qrs, false, false);
     }
    
     REPORT(PP);
-    REPORT(exp_mu);
-    REPORT(sigma);
-    REPORT(tau);
-    REPORT(nu);
-    REPORT(itc);
-    REPORT(indiv_ll);
   }
   return dll;
 }
