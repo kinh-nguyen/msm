@@ -76,13 +76,13 @@ Type objective_function<Type>::operator() ()
   DATA_MATRIX(penalty);
 
   vector<Type>
-      VXw = exp(VX) / exp(VX).sum(),
-      VMw = exp(VM) / exp(VM).sum(),
-      XMw = exp(XM) / exp(XM).sum(),
-      MSw = exp(MS) / exp(MS).sum(),
-      MDw = exp(MD) / exp(MD).sum(),
-      MWw = exp(MW) / exp(MW).sum(),
-      URw = exp(UR) / exp(UR).sum(),
+      VXw = exp(VX),
+      VMw = exp(VM),
+      XMw = exp(XM),
+      MSw = exp(MS),
+      MDw = exp(MD),
+      MWw = exp(MW),
+      URw = exp(UR),
       // splines
       VXv = Mspline * VXw,
       VMv = Mspline * VMw,
