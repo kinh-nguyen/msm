@@ -60,6 +60,7 @@ Type objective_function<Type>::operator() ()
   DATA_INTEGER(n_age);
   DATA_VECTOR(tx);
   DATA_VECTOR(tm);
+  DATA_IVECTOR(id);
 
   DATA_MATRIX(sim_data);
 
@@ -92,6 +93,12 @@ Type objective_function<Type>::operator() ()
   dll -= dnorm(b_tx, Type(0), Type(1), true);
   dll -= dnorm(b_tm, Type(0), Type(1), true);
 
+  PARAMETER_VECTOR(iid);
+  PARAMETER(log_iid);
+  Type sd_iid(exp(log_iid));
+  dll -= dnorm(sd_iid, Type(0), Type(1), true) + log_iid;
+  dll -= dnorm(iid, Type(0), sd_iid, true).sum();
+
   PQ<Type> KM;
   vector<Type> qrs(N_PAR);
 
@@ -103,7 +110,7 @@ Type objective_function<Type>::operator() ()
     for (int p = 0; p < N_PAR; p++)
     {
       Type lhz = logSHASHz(age, mu[p], sigma[p], nu[p], tau[p]);
-      qrs[p] = exp(itc[p] + lhz);
+      qrs[p] = exp(itc[p] + lhz + iid[id[i]]);
       if (p == 2) 
         qrs[p] *= exp(b_tx * tx[i]); // time since debuted
       if (p > 2)

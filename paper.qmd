@@ -452,12 +452,12 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
-vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
+vroom::vroom(here("data/svw/AO2015DHS.csv"), col_select = -1) %>%
   mutate(
     A = case_when(A == "V" ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == "S" ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
     Z = case_when(Z == "V" ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == "S" ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
     # across(where(is.numeric), as.integer)
-  ) %>%
+  ) %>% 
   mutate(
     fit = case_when(
       A != Z & (end - start == 1) & Z != 6 ~ 0,
@@ -465,8 +465,8 @@ vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
       otherwise ~ 2
     )
   ) %>%
-  filter(cc == "CG", sex == "female", sv == 2011) %>%
-  select(A, Z, start, end, tx, tm, n, fit) %>%
+  filter(cc == "AO", sex == "female", sv == 2015) %>%
+  select(id, A, Z, start, end, tx, tm, n, fit) %>%
   mutate(
     dstart = as.double(start),
     istart = start,
@@ -509,6 +509,9 @@ data$prior_tau <- c(0, 2.5)
 data$prior_coef <- c(0, 2.5)
 data$sim_data = as.matrix(sim_data)
 data <- modifyList(data, as.list(tdt))
+n_iid <- tdt$id %>% unique %>% length # better pass as factor to DATA_FACTOR
+
+data$id <- data$id - 1
 init <- list(
   mu = rep(log(20), N_PAR),
   log_sigma = rep(log(.5), N_PAR),
@@ -516,7 +519,9 @@ init <- list(
   log_tau = rep(log(0.1), N_PAR),
   itc = rep(0, N_PAR),
   b_tx = 0,
-  b_tm = 0
+  b_tm = 0,
+  iid = rnorm(n_iid, 0, 1),
+  log_iid = 0
 )
 ```
 
@@ -539,6 +544,7 @@ obj <- TMB::MakeADFun(
     # itc = c(1, 2, 3, 4, NA, NA, NA) %>% factor()
     # itc = rep(NA, N_PAR) %>% factor()
   ),
+  random = "iid",
   DLL = "msm", silent = FALSE, LaplaceNonZeroGradient = 0
 )
 
