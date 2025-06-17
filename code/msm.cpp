@@ -47,6 +47,7 @@ Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau)
 template<class Type>
 Type objective_function<Type>::operator() ()
 {
+  using namespace density;
   parallel_accumulator<Type> dll(this);
 
   // data
@@ -64,8 +65,9 @@ Type objective_function<Type>::operator() ()
 
   DATA_MATRIX(sim_data);
 
-  DATA_MATRIX(Mspline);
-  PARAMETER_VECTOR(VX);
+  DATA_MATRIX(Bspline);
+
+  PARAMETER_VECTOR(VX);                      
   PARAMETER_VECTOR(VM);
   PARAMETER_VECTOR(XM);
   PARAMETER_VECTOR(MS);
@@ -73,45 +75,44 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(MW);
   PARAMETER_VECTOR(UR);
 
-  DATA_MATRIX(penalty);
-
   vector<Type>
-      VXw = exp(VX),
-      VMw = exp(VM),
-      XMw = exp(XM),
-      MSw = exp(MS),
-      MDw = exp(MD),
-      MWw = exp(MW),
-      URw = exp(UR),
-      // splines
-      VXv = Mspline * VXw,
-      VMv = Mspline * VMw,
-      XMv = Mspline * XMw,
-      MSv = Mspline * MSw,
-      MDv = Mspline * MDw,
-      MWv = Mspline * MWw,
-      URv = Mspline * URw;
+      VXv = Bspline * VX,
+      VMv = Bspline * VM,
+      XMv = Bspline * XM,
+      MSv = Bspline * MS,
+      MDv = Bspline * MD,
+      MWv = Bspline * MW, 
+      URv = Bspline * UR;
 
-  // quad-form
-  Type
-      VXp = (VX * (penalty * VX)).sum(),
-      VMp = (VM * (penalty * VM)).sum(),
-      XMp = (XM * (penalty * XM)).sum(),
-      MSp = (MS * (penalty * MS)).sum(),
-      MDp = (MD * (penalty * MD)).sum(),
-      MWp = (MW * (penalty * MW)).sum(),
-      URp = (UR * (penalty * UR)).sum();
+  PARAMETER_VECTOR(log_k); // smooth penalty
+  vector<Type> k(exp(log_k));
+  dll -= dnorm(k, Type(0), Type(1), true).sum() + log_k.sum();
 
-  PARAMETER(log_k); // smooth penalty
-  Type k(exp(log_k));
-  dll -= dnorm(k, Type(0), Type(1), true) + log_k;
-  dll += 0.5 * k * (VXp + VMp + XMp + MSp + MDp + MWp + URp);
+  DATA_SPARSE_MATRIX(penalty);
+  SparseMatrix<Type>
+      Q0 = k[0] * penalty,
+      Q1 = k[1] * penalty,
+      Q2 = k[2] * penalty,
+      Q3 = k[3] * penalty,
+      Q4 = k[4] * penalty,
+      Q5 = k[5] * penalty,
+      Q6 = k[6] * penalty;
+
+  dll += GMRF(Q0)(VX) +
+         GMRF(Q1)(VM) +
+         GMRF(Q2)(XM) +
+         GMRF(Q3)(MS) +
+         GMRF(Q4)(MD) +
+         GMRF(Q5)(MW) +
+         GMRF(Q6)(UR);
 
   PARAMETER(b_tx);
   PARAMETER(b_tm);
-
   dll -= dnorm(b_tx, Type(0), Type(1), true);
   dll -= dnorm(b_tm, Type(0), Type(1), true);
+
+  PARAMETER_VECTOR(itc);
+  dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
   PQ<Type> KM;
   vector<Type> qrs(N_PAR);
@@ -121,13 +122,13 @@ Type objective_function<Type>::operator() ()
 
   auto fill_qrs = [&](int age, int i)
   {
-    qrs[0] = VXv[age];
-    qrs[1] = VMv[age];
-    qrs[2] = XMv[age] * exp(b_tx * tx[i]);
-    qrs[3] = MSv[age] * exp(b_tm * tm[i]);
-    qrs[4] = MDv[age] * exp(b_tm * tm[i]);
-    qrs[5] = MWv[age] * exp(b_tm * tm[i]);
-    qrs[6] = URv[age];
+    qrs[0] = exp(itc[0] + VXv[age]);
+    qrs[1] = exp(itc[1] + VMv[age]);
+    qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
+    qrs[3] = exp(itc[3] + MSv[age] + b_tm * tm[i]);
+    qrs[4] = exp(itc[4] + MDv[age] + b_tm * tm[i]);
+    qrs[5] = exp(itc[5] + MWv[age] + b_tm * tm[i]);
+    qrs[6] = exp(itc[6] + URv[age]);
   };
 
   matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
@@ -166,19 +167,22 @@ Type objective_function<Type>::operator() ()
   {
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
+    array<Type> QQ(N_Q, N_Q, n_sim); QQ.setZero();
     for (int i = 0; i < n_sim; i++) {
       int age = CppAD::Integer(sim_data(i, 0));
-      qrs[0] = VXv[age];
-      qrs[1] = VMv[age];
-      qrs[2] = XMv[age] * exp(b_tx * sim_data(i, 1));
-      qrs[3] = MSv[age] * exp(b_tm * sim_data(i, 2));
-      qrs[4] = MDv[age] * exp(b_tm * sim_data(i, 2));
-      qrs[5] = MWv[age] * exp(b_tm * sim_data(i, 2));
-      qrs[6] = URv[age];
+      qrs[0] = exp(itc[0] + VXv[age]);
+      qrs[1] = exp(itc[1] + VMv[age]);
+      qrs[2] = exp(itc[2] + XMv[age] + b_tx * sim_data(i, 1));
+      qrs[3] = exp(itc[3] + MSv[age] + b_tm * sim_data(i, 2));
+      qrs[4] = exp(itc[4] + MDv[age] + b_tm * sim_data(i, 2));
+      qrs[5] = exp(itc[5] + MWv[age] + b_tm * sim_data(i, 2));
+      qrs[6] = exp(itc[6] + URv[age]);
       PP.col(i) = KM(qrs, false, false);
+      QQ.col(i) = KM(qrs, false, true); // redundant
     }
    
     REPORT(PP);
+    REPORT(QQ);
   }
   return dll;
 }
