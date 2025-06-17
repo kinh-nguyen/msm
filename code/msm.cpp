@@ -114,24 +114,38 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
+  PARAMETER(logit_pi);
+  Type pi = invlogit(logit_pi);
+  dll -= dbeta(pi, Type(5), Type(2), true);
+  dll -= log(pi) + log(1 - pi);
+
   PQ<Type> KM;
-  vector<Type> qrs(N_PAR);
+  vector<Type> qrs(N_PAR), srs(N_PAR);
 
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
   auto fill_qrs = [&](int age, int i)
   {
-    qrs[0] = exp(itc[0] + VXv[age]);
-    qrs[1] = exp(itc[1] + VMv[age]);
+    qrs[0] = exp(itc[0] + VXv[age]); // pop 1, force pop 2 does not have VX
+    qrs[1] = Type(0); // pop 2, force pop 1 does not have VM
     qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
     qrs[3] = exp(itc[3] + MSv[age] + b_tm * tm[i]);
     qrs[4] = exp(itc[4] + MDv[age] + b_tm * tm[i]);
     qrs[5] = exp(itc[5] + MWv[age] + b_tm * tm[i]);
     qrs[6] = exp(itc[6] + URv[age]);
+    srs[0] = Type(0); // force pop 2 does not have VX
+    srs[1] = exp(itc[1] + VMv[age]); // pop 2, force pop 1 does not have VM
+    srs[2] = Type(0);
+    srs[3] = exp(itc[3] + MSv[age] + b_tm * tm[i]);
+    srs[4] = exp(itc[4] + MDv[age] + b_tm * tm[i]);
+    srs[5] = exp(itc[5] + MWv[age] + b_tm * tm[i]);
+    srs[6] = exp(itc[6] + URv[age]);
   };
 
-  matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
+  matrix<Type> 
+    Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q),
+    Pm1(N_Q, N_Q), Qm1(N_Q, N_Q), cumPm1(N_Q, N_Q);
   Type ll_val = 0;
 
   for (int i = 0; i < A.size(); i++)
@@ -139,25 +153,30 @@ Type objective_function<Type>::operator() ()
     if (fit[i] == 0)
     {
       fill_qrs(istart[i], i);
-      Qm = KM(qrs, false, true);
-      ll_val = log(Qm(A[i], Z[i]) + eps);
+      Qm = KM(qrs, false, false);
+      Qm1 = KM(srs, false, false);
+      ll_val = log(pi * Qm(A[i], Z[i]) + (1 - pi) * Qm1(A[i], Z[i]) + eps);
     }
     else if (fit[i] == 1)
     {
       fill_qrs(istart[i], i);
       Pm = KM(qrs, false, false);
-      ll_val = log(Pm(A[i], Z[i]) + eps);
+      Pm1 = KM(srs, false, false);
+      ll_val = log(pi * Pm(A[i], Z[i]) + (1 - pi) * Pm1(A[i], Z[i]) + eps);
     }
     else if (fit[i] == 2)
-    {
+    { // no need two pops here at there are no VM/VX
       cumPm = matrix<Type>::Identity(N_Q, N_Q);
+      cumPm1 = matrix<Type>::Identity(N_Q, N_Q);
       for (int t = istart[i]; t < end[i]; t++)
       {
         fill_qrs(t, i);
         Pm = KM(qrs, false, false);
+        Pm1 = KM(srs, false, false);
         cumPm = cumPm * Pm;
+        cumPm1 = cumPm1 * Pm1;
       }
-      ll_val = log(cumPm(A[i], Z[i]) + eps);
+      ll_val = log(pi * cumPm(A[i], Z[i]) + (1 - pi) * cumPm1(A[i], Z[i]) + eps);
     }
     dll -= n[i] * ll_val;
     indiv_ll[i] = -n[i] * ll_val;
@@ -167,22 +186,30 @@ Type objective_function<Type>::operator() ()
   {
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
-    array<Type> QQ(N_Q, N_Q, n_sim); QQ.setZero();
+    array<Type> PP1(N_Q, N_Q), PP2(N_Q, N_Q); 
+    PP1.setZero();
+    PP2.setZero();
     for (int i = 0; i < n_sim; i++) {
       int age = CppAD::Integer(sim_data(i, 0));
       qrs[0] = exp(itc[0] + VXv[age]);
-      qrs[1] = exp(itc[1] + VMv[age]);
+      qrs[1] = Type(0);
       qrs[2] = exp(itc[2] + XMv[age] + b_tx * sim_data(i, 1));
       qrs[3] = exp(itc[3] + MSv[age] + b_tm * sim_data(i, 2));
       qrs[4] = exp(itc[4] + MDv[age] + b_tm * sim_data(i, 2));
       qrs[5] = exp(itc[5] + MWv[age] + b_tm * sim_data(i, 2));
       qrs[6] = exp(itc[6] + URv[age]);
-      PP.col(i) = KM(qrs, false, false);
-      QQ.col(i) = KM(qrs, false, true); // redundant
+      srs[0] = Type(0);
+      srs[1] = exp(itc[1] + VMv[age]);
+      srs[2] = Type(0);
+      srs[3] = exp(itc[3] + MSv[age] + b_tm * sim_data(i, 2));
+      srs[4] = exp(itc[4] + MDv[age] + b_tm * sim_data(i, 2));
+      srs[5] = exp(itc[5] + MWv[age] + b_tm * sim_data(i, 2));
+      srs[6] = exp(itc[6] + URv[age]);
+      PP1 = KM(qrs, false, false);
+      PP2 = KM(srs, false, false);
+      PP.col(i) = pi * PP1 + (1 - pi) * PP2;
     }
-   
     REPORT(PP);
-    REPORT(QQ);
   }
   return dll;
 }
