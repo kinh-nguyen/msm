@@ -80,23 +80,17 @@ Type objective_function<Type>::operator() ()
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
   PQ<Type> KM;
-  vector<Type> qrs(N_PAR);
+  vector<Type> qrs(N_PAR), eta(N_PAR);
 
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
-  Type lhz = 0, eta = 0;
-
   auto fill_qrs = [&](Type age, int i)
   {
     for (int z = 0; z < N_PAR; z++)
-    {
-      lhz = logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
-      eta = itc[z] + lhz;
-      if (z == 2)
-        eta += b_tx * tx[i];
-      qrs[z] = exp(eta);
-    }
+      eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+    eta[2] += b_tx * tx[i];
+    qrs = exp(eta);
   };
 
   matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q);
@@ -127,13 +121,9 @@ Type objective_function<Type>::operator() ()
     for (int i = 0; i < n_sim; i++) {
       Type age = sim_data(i, 0);
       for (int z = 0; z < N_PAR; z++)
-      {
-        lhz = logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
-        eta = itc[z] + lhz;
-        if (z == 2)
-          eta += b_tx * sim_data(i, 1);
-        qrs[z] = exp(eta);
-      }
+        eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+      eta[2] += b_tx * sim_data(i, 1);
+      qrs = exp(eta);
       Pm = KM(qrs, false, false);
       PP.col(i) = Pm;
     }
