@@ -57,8 +57,6 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
   
-  DATA_IVECTOR(id);
-
   DATA_VECTOR(tx);
 
   DATA_MATRIX(sim_data);
@@ -111,7 +109,7 @@ Type objective_function<Type>::operator() ()
   };
 
   matrix<Type>
-      Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
+      Pm(N_Q, N_Q), Qm(N_Q, N_Q);
   Type ll_val = 0;
 
   for (int i = 0; i < A.size(); i++)
