@@ -57,6 +57,8 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
   
+  DATA_IVECTOR(id);
+
   DATA_VECTOR(tx);
 
   DATA_MATRIX(sim_data);
@@ -64,16 +66,12 @@ Type objective_function<Type>::operator() ()
   DATA_MATRIX(Bspline);
 
   PARAMETER_VECTOR(VX);                      
-  PARAMETER_VECTOR(VXx);                      
   PARAMETER_VECTOR(VM);
-  PARAMETER_VECTOR(VMx);
   PARAMETER_VECTOR(XM);
 
   vector<Type>
       VXv = Bspline * VX,
-      VX2 = Bspline * VXx,
       VMv = Bspline * VM,
-      VM2 = Bspline * VMx,
       XMv = Bspline * XM
       ;
 
@@ -85,16 +83,12 @@ Type objective_function<Type>::operator() ()
   SparseMatrix<Type>
       Q0 = k[0] * penalty,
       Q1 = k[1] * penalty,
-      Q2 = k[2] * penalty, 
-      Q3 = k[3] * penalty, 
-      Q4 = k[4] * penalty
+      Q2 = k[2] * penalty
       ;
 
   dll += GMRF(Q0)(VX) +
          GMRF(Q1)(VM) +
-         GMRF(Q2)(VXx) +
-         GMRF(Q3)(VMx) +
-         GMRF(Q4)(XM)
+         GMRF(Q2)(XM)
          ;
 
   PARAMETER(b_tx);
@@ -103,31 +97,27 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
-  PARAMETER(logit_pi);
-  Type pi = invlogit(logit_pi);
-  dll -= dbeta(pi, Type(5), Type(2), true);
-  dll -= log(pi) + log(1 - pi);
+  PARAMETER_VECTOR(iid);
+  PARAMETER(log_sigma_iid);
+  Type sigma_iid = exp(log_sigma_iid);
+  dll -= dnorm(sigma_iid, Type(0), Type(1), true) + log_sigma_iid;
+  dll -= dnorm(iid, Type(0), sigma_iid, true).sum();
 
   PQ<Type> KM;
-  vector<Type> qrs(N_PAR), srs(N_PAR);
+  vector<Type> qrs(N_PAR);
 
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
   auto fill_qrs = [&](int age, int i)
   {
-    qrs[0] = exp(itc[0] + VXv[age]); 
-    qrs[1] = exp(itc[1] + VMv[age]); 
-    qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
-
-    srs[0] = exp(itc[3] + VX2[age]); 
-    srs[1] = exp(itc[4] + VM2[age]); 
-    srs[2] = exp(itc[5] + XMv[age] + b_tx * tx[i]);
+    qrs[0] = exp(itc[0] + VXv[age] + iid[id[i]]); 
+    qrs[1] = exp(itc[1] + VMv[age] + iid[id[i]]); 
+    qrs[2] = exp(itc[2] + XMv[age] + iid[id[i]] + b_tx * tx[i]);
   };
 
-  matrix<Type> 
-    Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q),
-    Pm1(N_Q, N_Q), Qm1(N_Q, N_Q), cumPm1(N_Q, N_Q);
+  matrix<Type>
+      Pm(N_Q, N_Q), Qm(N_Q, N_Q), cumPm(N_Q, N_Q);
   Type ll_val = 0;
 
   for (int i = 0; i < A.size(); i++)
@@ -136,15 +126,13 @@ Type objective_function<Type>::operator() ()
     {
       fill_qrs(istart[i], i);
       Qm = KM(qrs, false, false);
-      Qm1 = KM(srs, false, false);
-      ll_val = log(pi * Qm(A[i], Z[i]) + (1 - pi) * Qm1(A[i], Z[i]) + eps);
+      ll_val = log(Qm(A[i], Z[i]) + eps);
     }
     else if (fit[i] == 1)
     {
       fill_qrs(istart[i], i);
       Pm = KM(qrs, false, false);
-      Pm1 = KM(srs, false, false);
-      ll_val = log(pi * Pm(A[i], Z[i]) + (1 - pi) * Pm1(A[i], Z[i]) + eps);
+      ll_val = log(Pm(A[i], Z[i]) + eps);
     }
     dll -= n[i] * ll_val;
     indiv_ll[i] = -n[i] * ll_val;
@@ -154,21 +142,13 @@ Type objective_function<Type>::operator() ()
   {
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
-    array<Type> PP1(N_Q, N_Q), PP2(N_Q, N_Q); 
-    PP1.setZero();
-    PP2.setZero();
     for (int i = 0; i < n_sim; i++) {
       int age = CppAD::Integer(sim_data(i, 0));
       qrs[0] = exp(itc[0] + VXv[age]);
       qrs[1] = exp(itc[1] + VMv[age]);
       qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
-
-      srs[0] = exp(itc[3] + VX2[age]);
-      srs[1] = exp(itc[4] + VM2[age]);
-      srs[2] = exp(itc[5] + XMv[age] + b_tx * tx[i]);
-      PP1 = KM(qrs, false, false);
-      PP2 = KM(srs, false, false);
-      PP.col(i) = pi * PP1 + (1 - pi) * PP2;
+      Pm = KM(qrs, false, false);
+      PP.col(i) = Pm;
     }
     REPORT(PP);
   }
