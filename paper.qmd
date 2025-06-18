@@ -526,14 +526,11 @@ init <- list(
   VX = rep(0, K),
   VM = rep(0, K),
   XM = rep(0, K),
-  VXx = rep(0, K),
-  VMx = rep(0, K),
   b_tx = 0, 
-  log_k = rep(log(1e-12), 5), # share smoothing parameter
-  itc = rep(0, 6),
-  logit_pi = log(.8/.2)
+  log_k = rep(log(1e-12), 3), 
+  itc = rep(0, 3)
 )
-init
+str(init)
 ```
 
 ```{r}

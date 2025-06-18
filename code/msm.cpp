@@ -97,12 +97,6 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
-  PARAMETER_VECTOR(iid);
-  PARAMETER(log_sigma_iid);
-  Type sigma_iid = exp(log_sigma_iid);
-  dll -= dnorm(sigma_iid, Type(0), Type(1), true) + log_sigma_iid;
-  dll -= dnorm(iid, Type(0), sigma_iid, true).sum();
-
   PQ<Type> KM;
   vector<Type> qrs(N_PAR);
 
@@ -111,9 +105,9 @@ Type objective_function<Type>::operator() ()
 
   auto fill_qrs = [&](int age, int i)
   {
-    qrs[0] = exp(itc[0] + VXv[age] + iid[id[i]]); 
-    qrs[1] = exp(itc[1] + VMv[age] + iid[id[i]]); 
-    qrs[2] = exp(itc[2] + XMv[age] + iid[id[i]] + b_tx * tx[i]);
+    qrs[0] = exp(itc[0] + VXv[age]); 
+    qrs[1] = exp(itc[1] + VMv[age]); 
+    qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
   };
 
   matrix<Type>
