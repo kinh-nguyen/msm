@@ -497,37 +497,19 @@ tdt %>%
 ```
 
 ```{r, prepmodelfit}
-# install.packages('splines')
-library(mgcv)
-library(splines)
 N_PAR = 3
 data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
-
-# B-splines
-x <- 0:data$n_age
-n_knots <- 20 
-degree <- 3 
-knots <- quantile(x, probs = seq(0, 1, length.out = n_knots + 2))[-c(1, n_knots + 2)]
-B <- bs(x, knots = knots, degree = degree, intercept = FALSE)
-K <- ncol(B)
-D <- diff(diag(K), differences = 2)
-P <- t(D) %*% D
-P <- P + diag(K) * 1e-8
-
-data$penalty <- as(P, 'dgCMatrix')
-data$Bspline <- B
-
 data$sim_data = as.matrix(sim_data)
 
 data <- modifyList(data, as.list(tdt))
 
 init <- list(
-  VX = rep(0, K),
-  VM = rep(0, K),
-  XM = rep(0, K),
-  b_tx = 0, 
-  log_k = rep(log(1e-12), 3), 
+  mu = rep(log(20), 3),
+  log_sigma = rep(log(1), 3),
+  nu = rep(1, 3),
+  log_tau = rep(log(1), 3),
+  b_tx = c(0),
   itc = rep(0, 3)
 )
 str(init)

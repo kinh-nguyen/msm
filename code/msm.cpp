@@ -61,33 +61,17 @@ Type objective_function<Type>::operator() ()
 
   DATA_MATRIX(sim_data);
 
-  DATA_MATRIX(Bspline);
+  PARAMETER_VECTOR(mu);
+  PARAMETER_VECTOR(log_sigma);
+  vector<Type> sigma = exp(log_sigma);
+  PARAMETER_VECTOR(nu);
+  PARAMETER_VECTOR(log_tau);
+  vector<Type> tau = exp(log_tau);
 
-  PARAMETER_VECTOR(VX);                      
-  PARAMETER_VECTOR(VM);
-  PARAMETER_VECTOR(XM);
-
-  vector<Type>
-      VXv = Bspline * VX,
-      VMv = Bspline * VM,
-      XMv = Bspline * XM
-      ;
-
-  PARAMETER_VECTOR(log_k); // smooth penalty
-  vector<Type> k(exp(log_k));
-  dll -= dnorm(k, Type(0), Type(1), true).sum() + log_k.sum();
-
-  DATA_SPARSE_MATRIX(penalty);
-  SparseMatrix<Type>
-      Q0 = k[0] * penalty,
-      Q1 = k[1] * penalty,
-      Q2 = k[2] * penalty
-      ;
-
-  dll += GMRF(Q0)(VX) +
-         GMRF(Q1)(VM) +
-         GMRF(Q2)(XM)
-         ;
+  dll -= dnorm(mu, Type(0), Type(1), true).sum();
+  dll -= dnorm(nu, Type(0), Type(1), true).sum();
+  dll -= dnorm(sigma, Type(0), Type(1), true).sum() + log_sigma.sum();
+  dll -= dnorm(tau, Type(0), Type(1), true).sum() + log_tau.sum();
 
   PARAMETER(b_tx);
   dll -= dnorm(b_tx, Type(0), Type(1), true);
@@ -101,28 +85,34 @@ Type objective_function<Type>::operator() ()
   vector<Type> indiv_ll(A.size());
   indiv_ll.setZero();
 
-  auto fill_qrs = [&](int age, int i)
+  Type lhz = 0, eta = 0;
+
+  auto fill_qrs = [&](Type age, int i)
   {
-    qrs[0] = exp(itc[0] + VXv[age]); 
-    qrs[1] = exp(itc[1] + VMv[age]); 
-    qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
+    for (int z = 0; z < N_PAR; z++)
+    {
+      lhz = logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+      eta = itc[z] + lhz;
+      if (z == 2)
+        eta += b_tx * tx[i];
+      qrs[z] = exp(eta);
+    }
   };
 
-  matrix<Type>
-      Pm(N_Q, N_Q), Qm(N_Q, N_Q);
+  matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q);
   Type ll_val = 0;
 
   for (int i = 0; i < A.size(); i++)
   {
     if (fit[i] == 0)
     {
-      fill_qrs(istart[i], i);
+      fill_qrs(dstart[i], i);
       Qm = KM(qrs, false, false);
       ll_val = log(Qm(A[i], Z[i]) + eps);
     }
     else if (fit[i] == 1)
     {
-      fill_qrs(istart[i], i);
+      fill_qrs(dstart[i], i);
       Pm = KM(qrs, false, false);
       ll_val = log(Pm(A[i], Z[i]) + eps);
     }
@@ -135,10 +125,15 @@ Type objective_function<Type>::operator() ()
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
     for (int i = 0; i < n_sim; i++) {
-      int age = CppAD::Integer(sim_data(i, 0));
-      qrs[0] = exp(itc[0] + VXv[age]);
-      qrs[1] = exp(itc[1] + VMv[age]);
-      qrs[2] = exp(itc[2] + XMv[age] + b_tx * tx[i]);
+      Type age = sim_data(i, 0);
+      for (int z = 0; z < N_PAR; z++)
+      {
+        lhz = logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+        eta = itc[z] + lhz;
+        if (z == 2)
+          eta += b_tx * sim_data(i, 1);
+        qrs[z] = exp(eta);
+      }
       Pm = KM(qrs, false, false);
       PP.col(i) = Pm;
     }
