@@ -64,12 +64,16 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(mu);
   PARAMETER_VECTOR(log_sigma);
   vector<Type> sigma = exp(log_sigma);
-  PARAMETER_VECTOR(nu);
+  PARAMETER_VECTOR(log_nu); // no need to be +, but an informative prior to have nu > 0
+  vector<Type> nu = exp(log_nu);
   PARAMETER_VECTOR(log_tau);
   vector<Type> tau = exp(log_tau);
 
-  dll -= dnorm(mu, Type(0), Type(1), true).sum();
-  dll -= dnorm(nu, Type(0), Type(1), true).sum();
+  // - nu must larger positive
+  // - tau small positive
+  // - sigma small
+  dll -= dnorm(mu, Type(3), Type(1), true).sum(); // log(20)
+  // dll -= dnorm(nu, Type(0), Type(1), true).sum() + log_nu.sum();
   dll -= dnorm(sigma, Type(0), Type(1), true).sum() + log_sigma.sum();
   dll -= dnorm(tau, Type(0), Type(1), true).sum() + log_tau.sum();
 

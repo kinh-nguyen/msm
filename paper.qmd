@@ -507,7 +507,7 @@ data <- modifyList(data, as.list(tdt))
 init <- list(
   mu = rep(log(20), 3),
   log_sigma = rep(log(1), 3),
-  nu = rep(1, 3),
+  log_nu = rep(0, 3),
   log_tau = rep(log(1), 3),
   b_tx = c(0),
   itc = rep(0, 3)
@@ -567,7 +567,7 @@ str(rp)
 P_yearly = rp$PP
 
 pe = tibble(
-  start = 1:51,
+  start = 1:dim(P_yearly)[3],
   VV = P_yearly[1,1,],
   VX = P_yearly[1,2,],
   VM = P_yearly[1,3,],
