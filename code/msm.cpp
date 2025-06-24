@@ -30,7 +30,7 @@ template <class Type>
 Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau)
 {
   Type x = log(t),
-       z = (x - mu) / sigma,
+       z = (x - mu) / (sigma * tau),
        tau_asinh_nu = tau * log(z + sqrt(z * z + 1)) - nu,
        c = cosh(tau_asinh_nu),
        r = sinh(tau_asinh_nu);
