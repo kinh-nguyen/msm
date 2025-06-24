@@ -56,6 +56,7 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
+  DATA_VECTOR(aai); // centered
   
   DATA_VECTOR(tx);
 
@@ -66,14 +67,17 @@ Type objective_function<Type>::operator() ()
   vector<Type> sigma = exp(log_sigma);
   PARAMETER_VECTOR(log_nu); // no need to be +, but an informative prior to have nu > 0
   vector<Type> nu = exp(log_nu);
-  PARAMETER_VECTOR(log_tau);
+  PARAMETER_VECTOR(log_tau); // now the intercept
   vector<Type> tau = exp(log_tau);
+  PARAMETER_VECTOR(tau_aai); // one for each transition, small deviation
+  dll -= dnorm(tau_aai, Type(0), Type(1), true).sum();
+  
 
   // - nu must larger positive
   // - tau small positive
   // - sigma small
   dll -= dnorm(mu, Type(3), Type(1), true).sum(); // log(20)
-  // dll -= dnorm(nu, Type(0), Type(1), true).sum() + log_nu.sum();
+  dll -= dnorm(nu, Type(0), Type(1), true).sum() + log_nu.sum();
   dll -= dnorm(sigma, Type(0), Type(1), true).sum() + log_sigma.sum();
   dll -= dnorm(tau, Type(0), Type(1), true).sum() + log_tau.sum();
 
@@ -91,8 +95,10 @@ Type objective_function<Type>::operator() ()
 
   auto fill_qrs = [&](Type age, int i)
   {
-    for (int z = 0; z < N_PAR; z++)
-      eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+    for (int z = 0; z < N_PAR; z++) {
+      Type tau_tmp = exp(log_tau[z] + tau_aai[z] * aai[i]);
+      eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau_tmp);
+    }
     eta[2] += b_tx * tx[i];
     qrs = exp(eta);
   };

@@ -470,6 +470,7 @@ vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
   mutate(
     dstart = as.double(start),
     istart = start,
+    aai = scale(aai)
   ) %>%
   filter(dstart > 0) %>%
   filter(Z < 3) %>%
@@ -509,6 +510,7 @@ init <- list(
   log_sigma = rep(log(1), 3),
   log_nu = rep(0, 3),
   log_tau = rep(log(1), 3),
+  tau_aai = rep(log(1), 3),
   b_tx = c(0),
   itc = rep(0, 3)
 )
