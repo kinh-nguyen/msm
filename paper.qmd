@@ -452,7 +452,7 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
-vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
+vroom::vroom(here("data/new_dw.csv.bz2")) %>%
   mutate(
     A = case_when(A == "V" ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == "S" ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
     Z = case_when(Z == "V" ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == "S" ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
@@ -465,8 +465,11 @@ vroom::vroom(here("data/new_dw.csv"), col_select = -1) %>%
       otherwise ~ 2
     )
   ) %>%
-  filter(cc == "CG", sex == "female", sv == 2011) %>%
-  select(A, Z, start, end, tx, tm, n, fit) %>%
+  allot(full_d)
+
+full_d %>%
+  filter(cc == "CG") %>%
+  select(A, Z, aai, start, end, tx, tm, n, fit) %>%
   mutate(
     dstart = as.double(start),
     istart = start,
