@@ -9,25 +9,28 @@ author:
   - name: Jeffrey Imai-Eaton
     affiliation:
       - ref: 2
+  - name: Till Baernighausen
+    affiliation:
+      - ref: 1
 affiliations: 
   - id: 1
     department: Heidelberg Institute for Global Health
     name: Heidelberg University Hospital
     city: Heidelberg
     state: Baden-Würtenburg
-    country: Germanty
+    country: Germany
     address: Im Neuenheimer Feld 130/3
     postcode: 69120
-    url: uni-heidelberg.de
+    url: https://www.uni-heidelberg.de
   - id: 2
-    department: Imperial College London
-    name: Heidelberg University Hospital
-    city: Heidelberg
-    state: Baden-Würtenburg
-    country: Germanty
-    address: Im Neuenheimer Feld 130/3
-    postcode: 69120
-    url: uni-heidelberg.de
+    department: Epidemiology
+    name: Harvard T.H. Chan School of Public Health
+    city: Boston
+    state: MA
+    country: USA
+    address: 677 Huntington Ave
+    postcode: 02115
+    url: https://www.harvard.edu/
 
 execute: 
   cache: true
@@ -153,15 +156,15 @@ population size and dynamic models for epidemic modelling and assessments.
 
 # Materials & Methods
 
-\noindent We developed a parametric multistate survival model (MSM) to estimate
-the transition rates between marital statuses since birth till the age of
-interview. A reparameterized four parameters log-Sinh-arcsinh (lnSHASH) baseline
-hazard was implemented to permit variations in the tails across transitions. We
-estimated the model's parameters varied by country and sex. A clock-forward
-approach is adopted to describe transitions that depend on time since entering a
-state, modelling as a proportional hazard as the duration increase. Respondents'
-age at interview were used to scale the hazard distribution's variance. Details
-are as follows.
+\noindent We developed a parametric semi-Markov multistate survival model (MSM)
+to estimate the transition rates between marital statuses since birth till the
+age of interview. A reparameterized four parameters log-Sinh-arcsinh (lnSHASH)
+baseline hazard was implemented to permit variations in the tails across
+transitions. We estimated the model's parameters varied by country and sex. A
+clock-forward approach is adopted to describe transitions that depend on time
+since entering a state, modelling as a proportional hazard as the duration
+increase. Respondents' age at interview were used to scale the hazard
+distribution's variance. Details are as follows.
 
 ## Household survey data
 
@@ -178,110 +181,18 @@ their age at first marriage or union. Recorded current marital statuses were:
 union," "Widowed from a marriage or consensual union and not remarried or not in
 a consensual union," "Divorced from a legal or formal marriage and not remarried
 or in a consensual union," "Separated from a marriage or consensual union," and
-"Married or living in a union." Survey weights 
+"Married or living in a union." DHS's survey weights were firstly scaled by
+$10^6$ and Kish's formular [@kish1995]. We splitted the individual history since
+birth to 1-year interval, resulting $>5$ million rows data.
 
 ## States transition
 
-\noindent We defined seven states of transition from virgin from birth ($V$) to
-currently sexually debuted and not married ($X$), married or in a union ($M$),
-three states of marriage dissolution including separated ($S$), divorced ($D$),
-widowed ($W$), and remarried or in a union again ($R$). A remarried event is
-defined if the respondent reported that there had been more than one union and
-currently in states M, D, S, W. Transitions are unidirectional for initial life
-stages and allow for cycles in later marital statuses: V $\to$ \{X, M\}, X $\to$
-M, M $\to$ \{S, D, W\} $\to$ R, R $\to$ \{S, D, W\}. From the AFM, the events D,
-S, W, R are interval censored, and there can be numerous traverse the paths in
-those with more than once unions. We assumed if a marriage dissolute within a
-year after married, there was no intermediate states in between, except the
-current status is remarried.
+\noindent We defined seven states of transition from virgin from birth ($V$) to currently sexually debuted and not married ($X$), married or in a union ($M$), three states of marriage dissolution including separated ($S$), divorced ($D$), widowed ($W$), and remarried or in a union again ($R$). A remarried event is defined if the respondent reported that there had been more than one union and currently in states M, D, S, W. Transitions are unidirectional for initial life stages and allow for cycles in later marital statuses: V $\to$ {X, M}, X $\to$ M, M $\to$ {S, D, W} $\to$ R, R $\to$ {S, D, W}. From the AFM, the events D, S, W, R are interval censored, and there can be numerous traverse the paths in those with more than once unions. We assumed if a marriage dissolute within a year after married, there was no intermediate states in between, except the current status is remarried.
 
-<!-- # Log-skew-logistic baseline hazard 
+## Transition hazard model
 
-We previously reparameterized of a skew-logistic for the survival models of age
-at sexual debut, which showed a better fit than other commonly used distributions
-[@nguyen2022]. This distribution is described elsewhere as a Generalized
-Logistic Distribution, Dagum distribution, or Burr Type III distribution. We
-parameterized the distribution by three parameters, $\lambda, p, \gamma$, where
-$\lambda > 0$ is the scale, $p > 0$ the shape, and $\gamma > 0$ the
-skewness parameter. The distribution is implemented as R functions `dskewlogis`,
-`pskewlogis` in [kinh-nguyen/ktools](https:://github.com/kinh-nguyen/ktools).
-The baseline hazard function for the distribution is: 
-$$
-\lambda_{rs0}(t) = \frac{\gamma p u}{t (1+u) ((1+u)^\gamma - 1)}
-$$
-where $u = (\lambda t)^{-p}$. The hazard rate $\lambda_{rs}(t)$ is:
-\begin{equation}
-\label{eq:dagum_ph_hazard} \lambda_{rs}(t | \mathbf{X}) =
-\lambda_{rs0}(t; \lambda, p, \gamma) \exp(\boldsymbol{\beta}^T \mathbf{X})
-\end{equation}
-where $\mathbf{X}$ is the vector of covariates and
-$\boldsymbol{\beta}$ is the vector of their coefficients. 
-The hazard represents the instantaneous transition intensity from state $i$ to
-state $j$ at age $t$ and a log-linear model of covariates $\mathbf{X}$  -->
-
-<!-- # Exponentially decaying Log-logistic hazard 
-
-We combines a Log-logistic base hazard with a modifying factor $1/(1+\delta
-e^{kt})$ that introduces an exponential-like decay Log-logistic (EDLL), with the
-hazard defined as:
-$$h(t; \lambda, \beta, \delta, k) = \frac{\beta t^{\beta-1}}{(\lambda + t^\beta)(1+\delta e^{kt})}$$
-where $\lambda = \alpha^\beta > 0$, with $\beta > 0$ is the shape parameter,
-$\delta = e^{kT} > 0$ (with $T$ being the reflection point), and $k > 0$ is
-the steepness parameter of the decay.
-The four-parameter hazard can model phenomena where a log-logistic hazard
-pattern is progressively attenuated, potentially leading to a (large) non-zero
-fraction of long-term survivors or insusceptibility. The hazard can capture
-non-monotonic risk with large reduction which can be beneficial is analysis of
-large waning risk, treatment efficacy fade-out, or effective long-term
-interventions. Example of the hazard function is shown in @fig-exampleHazard.
-For numerical computation, the log-transformed hazard function $\ln(h(t))$ is
-calculated as follows:
-\begin{align*}
-\ln(h(t)) &= \ln(\beta) + (\beta-1)\ln(t) \\
-          &\quad - \ln(\lambda + t^\beta) - \ln(1+\delta e^{kt})
-\end{align*}
-where the last two terms are computed using log-sum-exponential. -->
-
-<!-- # Inverse Gamma hazard
-
-Hazard of transition from state $i$ to state $j$ at age $t$ is modeled as an
-inverse gamma's hazard where its probability density function is
-$$f(x; \mu, \sigma) = \frac{\beta^{\alpha}}{\Gamma(\alpha)} x^{-(\alpha+1)} e^{-\beta/x}$$
-in which $\mu>0$, $\sigma>0$, $\alpha = 1/\sigma^2$ and 
-parameter $\beta = \mu (\alpha + 1)$ [@rigby2020]. The 
-survival function is
-$$S(x; \mu, \sigma) = \frac{\gamma(\alpha, \beta/x)}{\Gamma(\alpha)}$$
-where $\gamma(s,z) = \int_0^z u^{s-1}e^{-u}du$ is the lower
-incomplete gamma function. The log-hazard function is then 
-\begin{align*}
-& \log h(x; \mu, \sigma) = \log(f(x; \mu, \sigma)) - \log(S(x; \mu, \sigma)) \\
-& = \alpha \log \beta - (\alpha+1) \log x - \frac{\beta}{x} 
- - \log \gamma\left(\alpha, \frac{\beta}{x}\right)
-\end{align*} -->
-
-# Log-sinh-arcsinh hazard
-
-\noindent Since empirical risk estimate shows different shapes in the transition
-probability by age with a variety of dynamics after peak, we reparameterized
-sinh-arcsinh distribution [@jones2009] to have a positive support distribution.
-$$ f(x|\mu, \sigma, \nu, \tau) =
-\phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5}
-$$ 
-where 
-$z = (\log x - \mu)\sigma^{-1}\tau^{-1}$, 
-$e_1 =  \tau \log(z + (1 + z^2)^{-.5}) - \nu$, 
-$r = \sinh(e_1)$, 
-$c = \cosh(e_1)$, 
-and $\phi(r)$ is the standard normal probability distribution function. 
-Only $\mu$ is on the real line, $\sigma$, $\tau$, $\nu$ are positive parameters,
-i.e, model righ-skewed empirical data. 
-The cummulative distribution function is given by
-$F(x) = \Phi(r)$ and the hazard function is $h(x) = f(x)/(1 - F(x))$.
-<!-- [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm/). -->
-
-## Transition intensities and probabilities matrix
-
-\noindent The time-varying transition rates between the states is described with the intensity matrix $Q(t, \mathbf{X})$, 
+\noindent The time-varying transition rates between the states is described with
+the time-varying intensity matrix $Q(t, \mathbf{X})$, 
 \begin{equation}\label{mat:Q}
 \scriptsize
 Q = 
@@ -297,125 +208,82 @@ V & X & M & S & D & W & R \\
   0 & 0 & 0 & \lambda_{74} & \lambda_{75} & \lambda_{76} & q_{77} & R \\
 \end{block}
 \end{blockarray}
-\end{equation}
-The off-diagonal elements $q_{ij}(t, \mathbf{X}) = \lambda_{ij}(t, \mathbf{X})$
-for $i \neq j$, representing the intensity of transition from state $i$ to state
+\end{equation} 
+The off-diagonal elements $q_{ij}(t, \mathbf{X}) = \lambda_{ij}(t, \mathbf{X})$, 
+$i \neq j$, representing the intensity of transition from state $i$ to state
 $j$. The diagonal elements $q_{ii}(t, \mathbf{X}) = - \sum_{j \neq i}
 \lambda_{ij}(t, \mathbf{X})$, representing the negative of the total rate of
-leaving state.
-
+leaving.
 The remarried state $R$ describes individuals who reported to having more than
-once union. However, since the marriage dissolution events were not observed in
-data, we constrained to have no differences from those who had married only once
-($M$) and those had remarried ($R$) regarding to dissolution rates, i.e.,
-$q_{33} = q_{77},\ \lambda_{34} = \lambda_{74},\ \lambda_{35} = \lambda_{75},\
-\lambda_{36} = \lambda_{76}$. Furthermore, the remarried rates from either of
-the three marriage dissolution states ($S, D, W$) are only informed by the
-number of individuals who reported having more than once union and currently
-married --- it is unknown from which state the individual had remarried. Thus,
-we constrained $\lambda_{47} = \lambda_{57} = \lambda_{67}$. Among those had
-only once or none unions, we evaluated only the submatrix block $Q_{6\times 6}$
-excluding state R.
+once marriages/unions. Because the marriage dissolution events were not observed
+in data, we constrained the rates of dissolution to be the same for ($M$) and
+($R$), i.e., $q_{33} = q_{77},\ \lambda_{34} = \lambda_{74},\ \lambda_{35} =
+\lambda_{75},\ \lambda_{36} = \lambda_{76}$. Also, the remarried rates from the
+marriage dissolution states ($S, D, W$) are only informed by the number of
+individuals with more than once union and currently married without knowing from
+which state the individual had remarried. Thus, we constrained $\lambda_{47} =
+\lambda_{57} = \lambda_{67}$. Among those who had only once or none unions, we
+evaluated only the submatrix block $Q_{6\times 6}$ excluding state R.
+
+The general transition intensities between state $i$ and $j$ over ages $t =
+1,2,...,$ is
+\begin{flalign*}
+\lambda_{ij}(t) &= h_{ij}(t | \Theta) \exp(\alpha_{ij}) \\
+\lambda_{23}(t) &= h_{23}(t | \Theta) \exp(\alpha_{23} + \beta_{23} t_x)  \\
+\lambda_{3j}(t) &= h_{3j}(t | \Theta) \exp(\alpha_{3j} + \beta_{3j} t_m)
+\end{flalign*}
+where $h(t)$ is a parametric hazard function, $t_x, t_m$ are time since sexual
+debut and time since first marriage, respectively. In other words, this is a
+semi-Markov model where a transition depends not only on current state, but also 
+proportionally to the time spent since entering a state.
+
+Exploring the empirical risk estimate, we found different shapes in the
+transition probability by age with a variety of dynamics after the peak, we opted for the flexible sinh-arcsinh distribution [@jones2009] and reparameterized to have a positive support. The density function reads as
+$$ f(x|\mu, \sigma, \nu, \tau) =
+\phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5}
+$$ 
+where 
+$z = (\log x - \mu)\sigma^{-1}\tau^{-1}$, 
+$\gamma =  \tau \log(z + (1 + z^2)^{-.5}) - \nu$, $r = \sinh(\gamma)$, 
+$c = \cosh(\gamma)$, 
+and $\phi(r)$ is the standard normal probability distribution function. The
+parameter $\mu$ is the mean, with variance $\sigma > 0$, kurtosis $\tau > 0$,
+skewness $\nu > 0$, i.e, model righ-skewed empirical data. The hazard function
+is given by 
+$h(x) = f(x)/(1 - \Phi(r))$. 
+For each sex ($s$), and across countries ($k$), the four parameters are assumed
+to vary around a global mean, e.g., $\mu_{ij,s,k} = \mu_{ij,s} + c_{ij,s,k}$,
+$c_{ij, s,k}\sim N(0, \kappa_{ij, s})$. In addition, as older paricipants have
+naturally a wider permited age range to report (i.e., the right tail of the
+distribution), we modelled the kurtosis as a function of age at interview, i.e.,
+$$\tau_{ij,sk} = \exp (\zeta_{ij,s,k} + \zeta_{ij,s,k} \cdot \text{aai})$$
+in which *aai* is the standardized age at interview. 
 
 ## Model likelihood
 
-The likelihood is based on individuals' observed histories which includes
-segments of history where the state occupancy is continuously known and segments
-where only the start and end states of an interval are known. 
-Let $t_0$ be the initial age of observation, $t_c$ be the current age at
-observation, $t_d$ be the age at sexual debut, and $t_{m}$ be the age at
-first marriage. 
-The survival probability in state $i$ from $t_a$ to $t_b$ is $\exp(-H_i(t_a,
-t_b, \mathbf{X}))$ [@van2016multi], where 
-\begin{flalign*}
-H_i(t_a, t_b, \mathbf{X}) &= \int_{t_a}^{t_b} q_{ii}(u, \mathbf{X}) du
-%& = \int_{t_a}^{t_b} -\sum_{j \neq i} \lambda_{ij}(u, \mathbf{X}) du
-%&= -\left[ A_i(\mathbf{X})(t_b-t_a) + B_i \frac{t_b^2-t_a^2}{2} \right] \\
-\end{flalign*}
-For currently virgin observations, the individual has remained in state V from
-$t_0$ to $t_c$  with
-$$L_V = \exp(-H_V(t_0, t_c, \mathbf{X})).$$
-Those made sexual debut at $t_d$, the path is then V($t_0$) $\to$ V($t_d^-$)
-$\to$ X($t_d$) $\to$ X($t_c$) with the likelihood contribution as
-\begin{align*}
-L_{X} = & \exp(-H_V(t_0, t_d, \mathbf{X})) \times \lambda_{V,X}(t_d, \mathbf{X}) \\
-        \times & \exp(-H_{X}(t_d, t_c, \mathbf{X})).
-\end{align*}
-Those are currently in their first marriage at $t_c$, there are two
-sub-paths: who made sexual debut before married with transition V $\to$ X $\to$
-M ($t_d < t_{m}$) has 
-\begin{align*}
-L_{M}^{(1)} & = \exp(-H_V(t_0, t_d, \mathbf{X})) \times \lambda_{V,X}(t_d,
-\mathbf{X}) \\
-& \times \exp(-H_{X}(t_d, t_{m}, \mathbf{X})) \times \lambda_{X,M}(t_{m}, \mathbf{X}) \\
-& \times \exp(-H_{M}(t_{m}, t_c, \mathbf{X})),
-\end{align*}
-whereas those have $t_d = t_{m}$ or unknown $t_d$ are assumed transits V $\to$
-M has
-\begin{align*}
-L_{M}^{(2)} & = \exp(-H_V(t_0, t_{m}, \mathbf{X})) \times \lambda_{V,M}(t_{M}, \mathbf{X}) \\
-  & \times \exp(-H_{M}(t_{m}, t_c, \mathbf{X})).
-\end{align*}
-For those who are currently separated (S), divorced (D), widowed (W), or
-remarried (R) at $t_c$, there are two phases: likelihood of reaching M at
-$t_{m}$ either $L_{M1}^{(1)}$ or $L_{M1}^{(2)}$ 
-\begin{align*}
-L_{M}^{(1)} = & \exp(-H_V(t_0, t_d, \mathbf{X})) \lambda_{V,X}(t_d, \mathbf{X})  \\
-& \exp(-H_{X}(t_d, t_{m}, \mathbf{X})) \lambda_{X,M}(t_{m}, \mathbf{X}).\\
-L_{M}^{(2)} = & \exp(-H_V(t_0, t_m, \mathbf{X})) \lambda_{V,M}(t_m, \mathbf{X}).
-\end{align*}
-and likelihood of being in state $C \in \{S, D, W, R\}$ at $t_c$, given in M
-at $t_{m}$. 
-$$L_C = L_{M}^{(*)} \times (P(t_{m}, t_c, \mathbf{X}))_{M, C}$$
-where $P(\cdot)_{i,j}$ an element from the probability transition matrix P-matrix.
-The term $P$ accounts for all possible sequences of transitions that could occur
-between $t_m$ and $t_{c}$ starting in state M and ending in state C
-[@van2016multi;@jackson2022].
+\noindent The likelihood is calculated based on individuals' observed histories
+which includes segments where the state occupancy is continuously known and
+segments where only the start and end states of an interval are known. 
+Assuming the hazard is constant in a 1-year episode, we can approximate the
+transition probability that an individual in state $i$ at time $t$ will be in
+state $j$ at time $t + 1$ by
+$$\dfrac{d}{dt} P(t, t + 1, \mathbf{X}, \Theta) \approx \text{expm}(Q(t, X, \Theta)).$$
+where `expm` is the matrix exponential function [@vandenhout2020].
+For interval censored observations, those that transited away from state $M$ at
+time $t$ to state $j$ at time $t + k$, the likelihood is a total probability of all 
+possible paths traverse through every single 1-year steps, i.e.,
+$$P(t, t + k) \approx \prod_{i = 0}^k \text{expm}(Q(t + i))$$
+with $Q(t_k)$ is evaluated at the start of the interval. The likelihood is then the 
+corresponding matrix's element obsevations.
 
-The P-matrix contains elements $p_{ij}(t_1, t_2, \mathbf{X})$ representing the
-probability that an individual in state $i$ at time $t_1$ will be in state $j$
-at time $t_2$. The matrix is computed by solving the differential equations:
-$$
-\frac{d}{dt} P(t_1, t, \mathbf{X}) = P(t_1, t, \mathbf{X}) Q(t, \mathbf{X})
-$$
-with the initial condition $P(t_1, t_1, \mathbf{X}) = \mathbf{I}$ 
-to obtain $P(t_1, t_2, \mathbf{X})$.
-When $Q(t, \mathbf{X})$ is
-constant over the interval $[t_1, t_2]$, then $P(t_1, t_2, \mathbf{X}) =
-\text{expm}(Q \cdot (t_2 - t_1))$, where
-`expm` is the matrix exponential [@van2016multi].
-Here, since $Q(t, \mathbf{X})$ is age-dependent, $P(t_1, t_2, \mathbf{X})$ is
-computed by dividing the interval $[t_1, t_2]$ into small subintervals $\Delta
-t_k$ within which $Q(t_k, \mathbf{X})$ is assumed constant. In particular,
-$$ P(t_1, t_2, \mathbf{X}) \approx \prod_{k} \text{expm}(Q(t_k, \mathbf{X})
-\cdot \Delta t_k)$$
-Here, we use $\Delta t_k = 1$ year, and $Q(t_k, \mathbf{X})$ is
-evaluated at the start of the year $t_k$.
-
-## Computational
-
-Calculating the matrix exponential is an expensive operation
-[@molerNineteenDubiousWays2003], thus, for each parameter set, we pre-computed
-the values for all the unique combinations of individual profile and only
-queried the values during the likelihood calculation. Since there were over a
-million individual records, to reduce the size of the data for computational
-purposes, the standard time-split data format (each row an episode) was not used
-but indicators for the likelihood's terms in \cref{eq_likelihood} were
-calculated for each individual (each row an individual). Furthermore,
-individuals with similar life-course were further aggregated to group in which
-the group counts was used to weight the likelihood in \cref{eq_likelihood}, thus
-reducing the number of unique calculation of the likelihood.
-
-The model and likelihood calculation were implemented with Template Model
-Builder which can be accessed on Github's repository
-[kinh-nguyen/multistage]{https://github.com/kinh-nguyen/multistage}. Parameter
-estimate was done with empirical Bayes. The priors were chosen to shrink the
-regression coefficients towards zero when they were only weakly informed by the
-data. In particular, $\beta_{0,rs} \sim N(0, 0.5)$, $\beta_{1, rs}\sim N(0,
-0.1)$ and $c_(\text{country})\sim N(0, 0.1)$.  We computed posterior medians and
-95\% credible intervals (95\% CI) of the outcomes of interests, including the
-rate, transition probability, and hazard by ages, using posterior samples of
-3000 parameters.
+The model's parameters was estimated using empirical Bayes approach. The
+standard normal prior were chosen for the unrestricted parameters, and the
+half-normal prior was used for positive parameters sampling on logarith scale.
+We computed posterior medians and 95% uncertainty intervals (95% UI) of the
+outcomes of interests, including the rate, transition probability, and hazard by
+ages, using posterior samples of 3000 parameters. The model and likelihood
+calculation were implemented with Template Model Builder which can be accessed
+on Github's repository [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm). 
 
 # Results
 
