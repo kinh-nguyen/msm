@@ -125,7 +125,7 @@ Calculate needed indcator for likelihood
 d <- readRDS(here('data/cleaned.rds'))
 library(haven)
 d %>%
-  select(lab, sex, X = afs, M = marriage_age, age, u = n_union, ms = marital_status, weights) %>%
+  select(lab, sex, X = afs, M = marriage_age, dob, age, u = n_union, ms = marital_status, weights) %>%
   filter(weights != 0) %>%
   group_by(lab) %>%
   mutate(
@@ -135,7 +135,6 @@ d %>%
   ) %>%
   ungroup() %>%
   select(-weights, -n_eff) %>%
-    mutate(
   mutate(
     id = 1:n(),
     cc = substr(lab, 1, 2),
@@ -161,6 +160,8 @@ d %>%
   mutate(
     afs = X,
     afm = M,
+    yob = cmc_to_year(dob),
+    aai = age # age at interview
   ) %>% 
   pivot_longer(c(V, X, M, age)) %>%
   mutate(name = if_else(name == "age", ms, name)) %>% 
@@ -194,27 +195,28 @@ parallel::mclapply(sv, function(i) {
       ) %>%
       ungroup() %>%
       filter(!(!norep & is.na(value2))) %>%
-      select(cc, sv, sex, id, A, Z, start, end, afs, afm, kish) %>%
+      select(cc, sv, sex, id, aai, A, Z, start, end, afs, afm, kish) %>%
       mutate(
         # recode to zero and use as covariate
         tx  = if_else(start - afs < 0 | is.na(afs), 0, start - afs),
         tm  = if_else(start - afm < 0 | is.na(afm), 0, start - afm),
       ) %>%
-      group_by(cc, sv, sex, A, Z, start, end, tx, tm) %>%
-      summarise(n = sum(kish)) %>%
+      group_by(cc, sv, sex, aai, A, Z, start, end, tx, tm) %>%
+      summarise(n = round(sum(kish), 6)) %>%
       ungroup() %>%
-      write.csv(here("data/svw", paste0(i, ".csv")))
+      write.csv(here("data/svw", paste0(i, ".csv")), row.names = FALSE)
 },
 mc.cores = 6
 ) %>% invisible()
 
 
-new_d <- vroom::vroom(list.files(here('data/svw'), full.names = T), col_select = -1)
+new_d <- vroom::vroom(list.files(here('data/svw'), full.names = T))
 # add tests later if found
 new_d %>% filter(start == end) %>% nrow() %>% mustbe(0)
 new_d %>% count(A, Z) %>% nrow() %>% mustbe(10)
 new_d %>% filter(end < start) %>% nrow() %>% mustbe(0)
 new_d %>% count(cc) %>% nrow() %>% mustbe(37)
 write.csv(new_d, here('data', 'new_d.csv'))
-write.csv(new_d, here('data', 'new_dw.csv'))
+bz2_file <- bzfile(here("data", "new_dw.csv.bz2"))
+write.csv(new_d, bz2_file, row.names = FALSE)
 ```
