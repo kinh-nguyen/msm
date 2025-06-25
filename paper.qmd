@@ -153,52 +153,47 @@ population size and dynamic models for epidemic modelling and assessments.
 
 # Materials & Methods
 
-We used a multistate survival framework to model the rates of transition between
-marital statuses. Multistate models (MSMs) is a robust framework for analyzing
-the movement through a series of discrete states over time by specifying the
-instantaneous risk of moving from state $i$ to state $j$ at time $t$. To
-characterize temporal trends and geographic variation in the rate, we allowed
-the parameters to vary by country and survey years. Changes over time were
-represented by a second-order auto-regressive (AR2). The model was fitted
-separately for male and female.
+\noindent We developed a parametric multistate survival model (MSM) to estimate
+the transition rates between marital statuses since birth till the age of
+interview. A reparameterized four parameters log-Sinh-arcsinh (lnSHASH) baseline
+hazard was implemented to permit variations in the tails across transitions. We
+estimated the model's parameters varied by country and sex. A clock-forward
+approach is adopted to describe transitions that depend on time since entering a
+state, modelling as a proportional hazard as the duration increase. Respondents'
+age at interview were used to scale the hazard distribution's variance. Details
+are as follows.
 
 ## Household survey data
 
-Data on age at first sex (AFS), age at marriage (AAM), and current marital
-status were obtained from Demographic and Health Surveys (DHS) in 37 countries.
-Only nationally representative surveys with individual records available for
-analysis were used. For AFS, respondents stated their age at first sexual
-intercourse; valid responses were 'never,' an integer age, or 'at first
-marriage/union,' which was substituted with the reported age at first marriage.
-Respondents also recalled their age at first marriage or union. Recorded current
-marital statuses were: "Never married nor lived in a consensual union," "Legally
-or formally married," "Not legally or formally married but living with a
-man/woman in a consensual union," "Widowed from a marriage or consensual union
-and not remarried or not in a consensual union," "Divorced from a legal or
-formal marriage and not remarried or in a consensual union," "Separated from a
-marriage or consensual union," and "Married or living in a union."
+\noindent Data on respondents's country, age, sex, age at first sex (AFS), age
+at first marriage (AFM), and current marital status were obtained from
+Demographic and Health Surveys (DHS) in 37 countries. Only nationally
+representative surveys with individual records available for analysis were used.
+For AFS, respondents stated their age at first sexual intercourse; valid
+responses were 'never,' an integer age, or 'at first marriage/union,' which was
+substituted with the reported age at first marriage. Respondents also recalled
+their age at first marriage or union. Recorded current marital statuses were:
+"Never married nor lived in a consensual union," "Legally or formally married,"
+"Not legally or formally married but living with a man/woman in a consensual
+union," "Widowed from a marriage or consensual union and not remarried or not in
+a consensual union," "Divorced from a legal or formal marriage and not remarried
+or in a consensual union," "Separated from a marriage or consensual union," and
+"Married or living in a union." Survey weights 
 
 ## States transition
 
-We defined seven states of transition from virgin from birth ($V$) to current
-marital status sexually debuted (and not married) ($X$), married or in a union
-($M$), three states of marriage dissolution including separated ($S$), divorced
-($D$), widowed ($W$), and remarried or in a union again ($R$). A remarried event
-is defined if the respondent reported that there had been more than one union
-and currently is married, in a union, or is in one of the three stages of
-marriage dissolution. 
-
-Transitions are unidirectional for initial life stages and allow for cycles in
-later marital statuses: V $\to$ X, V $\to$ M (direct marriage implies debut), X
-$\to$ M, M $\to$ S, M $\to$ D, M $\to$ W, S $\to$ D, S $\to$ R, D $\to$ R, W
-$\to$ R, R $\to$ S, R $\to$ D, R $\to$ W. The states S, D, W, and R can form
-cycles. Furthermore, when the AFS is reported equal or greater than AAM we set
-the transition as the respondent moved from a virgin directly to married. There
-can be as many number of unions as theoretically allowed to traverse the paths
-in those records with more than once unions. However, while marital dissolution
-states are not observed, we assumed if a marriage dissolute within a year after
-married, there was no intermediate states in between, except the current status 
-is remarried.
+\noindent We defined seven states of transition from virgin from birth ($V$) to
+currently sexually debuted and not married ($X$), married or in a union ($M$),
+three states of marriage dissolution including separated ($S$), divorced ($D$),
+widowed ($W$), and remarried or in a union again ($R$). A remarried event is
+defined if the respondent reported that there had been more than one union and
+currently in states M, D, S, W. Transitions are unidirectional for initial life
+stages and allow for cycles in later marital statuses: V $\to$ \{X, M\}, X $\to$
+M, M $\to$ \{S, D, W\} $\to$ R, R $\to$ \{S, D, W\}. From the AFM, the events D,
+S, W, R are interval censored, and there can be numerous traverse the paths in
+those with more than once unions. We assumed if a marriage dissolute within a
+year after married, there was no intermediate states in between, except the
+current status is remarried.
 
 <!-- # Log-skew-logistic baseline hazard 
 
@@ -266,29 +261,27 @@ incomplete gamma function. The log-hazard function is then
 
 # Log-sinh-arcsinh hazard
 
-Since empirical data shows a variety of shapes in the transition probability
-over age, we selected the sinh-arcsinh distribution [@jones2009] and reparameterized it
-to have a support on $(0, \infty)$, namely a log-sinh-arcsinh distribution
-(LSAS). This is done by substituting $y = \log x$ and performed a change of
-variable, i.e.,
-$$
-f(x) = \phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5} 
-$$
-where $z = (\log x - \mu)\sigma^{-1}$, 
-$e_1 = \exp[\tau\cdot \text{asinh}(z)]$,
-$e_2 = \exp[-\nu \cdot \text{asinh}(z)]$,
-$r = 0.5 \left[ e_1 - e_2 \right]$,
-$c = 0.5 \left[ \tau \cdot e_1 + \nu \cdot e_2 \right]$,
-and $\phi(r)$ is the standard normal PDF evaluated at $r$.  Only $\mu$ is on
-the real line, all $\sigma$, $\tau$, $\nu$ are positive parameters. The
-cummulative distribution function is given by $F(x) = \Phi(r)$ and the hazard
-function is $h(x) = f(x)/(1 - F(x))$. Implementation of the hazard function is
-done in TMB code available on [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm/).
+\noindent Since empirical risk estimate shows different shapes in the transition
+probability by age with a variety of dynamics after peak, we reparameterized
+sinh-arcsinh distribution [@jones2009] to have a positive support distribution.
+$$ f(x|\mu, \sigma, \nu, \tau) =
+\phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5}
+$$ 
+where 
+$z = (\log x - \mu)\sigma^{-1}\tau^{-1}$, 
+$e_1 =  \tau \log(z + (1 + z^2)^{-.5}) - \nu$, 
+$r = \sinh(e_1)$, 
+$c = \cosh(e_1)$, 
+and $\phi(r)$ is the standard normal probability distribution function. 
+Only $\mu$ is on the real line, $\sigma$, $\tau$, $\nu$ are positive parameters,
+i.e, model righ-skewed empirical data. 
+The cummulative distribution function is given by
+$F(x) = \Phi(r)$ and the hazard function is $h(x) = f(x)/(1 - F(x))$.
+<!-- [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm/). -->
 
 ## Transition intensities and probabilities matrix
 
-The transition rates between the states is described with the intensity matrix
-$Q(t, \mathbf{X})$, 
+\noindent The time-varying transition rates between the states is described with the intensity matrix $Q(t, \mathbf{X})$, 
 \begin{equation}\label{mat:Q}
 \scriptsize
 Q = 
@@ -309,22 +302,20 @@ The off-diagonal elements $q_{ij}(t, \mathbf{X}) = \lambda_{ij}(t, \mathbf{X})$
 for $i \neq j$, representing the intensity of transition from state $i$ to state
 $j$. The diagonal elements $q_{ii}(t, \mathbf{X}) = - \sum_{j \neq i}
 \lambda_{ij}(t, \mathbf{X})$, representing the negative of the total rate of
-leaving state $i$, e.g., 
-$q_{11}(t) = -(\lambda_{V,SD}(t) + \lambda_{V,M1}(t))$.
+leaving state.
 
-The remarried state $R$ is separated from $M$ to model individuals who reported
-having more than once union. While the rate of marital dissolution
-could be different from those who had married only once ($M$) and those had
-remarried ($R$), all the marriage dissolution events were not observed in the
-data. Thus, we set the marital dissolution rates to be the same for both
-marriage and remarried states $M$ and $R$, i.e., $q_{33} = q_{77},\ \lambda_{34}
-= \lambda_{74},\ \lambda_{35} = \lambda_{75},\ \lambda_{36} = \lambda_{76}$. In
-addition, the three remarried rates from either of the three marriage
-dissolution states ($S, D, W$) are only informed by the number of individuals
-who reported having more than once union and currently married --- it is unknown
-from which state the individual had remarried. Thus, we constrained the three
-rates to be equal of the parameters, i.e., $\lambda_{47} = \lambda_{57} =
-\lambda_{67}$.
+The remarried state $R$ describes individuals who reported to having more than
+once union. However, since the marriage dissolution events were not observed in
+data, we constrained to have no differences from those who had married only once
+($M$) and those had remarried ($R$) regarding to dissolution rates, i.e.,
+$q_{33} = q_{77},\ \lambda_{34} = \lambda_{74},\ \lambda_{35} = \lambda_{75},\
+\lambda_{36} = \lambda_{76}$. Furthermore, the remarried rates from either of
+the three marriage dissolution states ($S, D, W$) are only informed by the
+number of individuals who reported having more than once union and currently
+married --- it is unknown from which state the individual had remarried. Thus,
+we constrained $\lambda_{47} = \lambda_{57} = \lambda_{67}$. Among those had
+only once or none unions, we evaluated only the submatrix block $Q_{6\times 6}$
+excluding state R.
 
 ## Model likelihood
 
