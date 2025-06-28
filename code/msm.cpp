@@ -1,28 +1,27 @@
 #include <TMB.hpp>
 #include "ktools.hpp"
 
-#define N_PAR 3
-#define N_Q 3
+#define N_PAR 7
+#define N_Q 7
 #define eps CppAD::numeric_limits<double>::epsilon()
 
 using Eigen::seqN;
 
 template <class T> 
 struct PQ {
-    matrix<T> 
-        qM = matrix<T>(N_Q, N_Q),
-        pM = matrix<T>(N_Q, N_Q);
+    matrix<T> Q = matrix<T>(N_Q, N_Q);
     PQ () {};
-    matrix<T> operator() (vector<T> q_rs, bool isLog = true, bool isQ = false) {
-      qM.setZero(); pM.setZero();
-      qM(0, 1) = q_rs(0); // debut
-      qM(0, 2) = q_rs(1); // marriage from virgin
-      qM(1, 2) = q_rs(2); // marriage from debut
-      qM.diagonal() = T(-1) * qM.rowwise().sum();
-      if (isQ)
-        return isLog ? qM.array().log().matrix() : qM;
-      pM = atomic::expm(qM);
-      return isLog ? pM.array().log().matrix() : pM;
+    matrix<T> operator() (vector<T> q_rs, int size) {
+      Q.setZero();
+      Q(0, 1) = q_rs(0); // debut
+      Q(0, 2) = q_rs(1); // marriage from virgin
+      Q(1, 2) = q_rs(2); // marriage from debut
+      Q(2, {3, 4, 5}) = q_rs({3, 4, 5}); 
+      Q({3, 4, 5}, 6) = q_rs({6, 6, 6}); 
+      Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
+      Q.diagonal() = T(-1) * Q.rowwise().sum();
+      matrix<T> q_sub = Q.block(0, 0, size, size);
+      return atomic::expm(q_sub);
     };
 };
 
@@ -34,7 +33,6 @@ Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau)
        tau_asinh_nu = tau * log(z + sqrt(z * z + 1)) - nu,
        c = cosh(tau_asinh_nu),
        r = sinh(tau_asinh_nu);
-  // SHASHo2 with sigma' = sigma . tau
   Type logres = -log(sigma) - 0.5 * log(2 * M_PI) - 0.5 * log(1 + (z * z)) + log(c) - 0.5 * (r * r) - x;
   Type logp = log(1.0 - pnorm(r) + eps);
   Type log_hz = logres - logp;
@@ -57,7 +55,7 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(fit);
   DATA_INTEGER(n_age);
   DATA_VECTOR(aai); // centered
-  
+  DATA_VECTOR(tm);
   DATA_VECTOR(tx);
 
   DATA_MATRIX(sim_data);
@@ -72,7 +70,6 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(tau_aai); // one for each transition, small deviation
   dll -= dnorm(tau_aai, Type(0), Type(1), true).sum();
   
-
   // - nu must larger positive
   // - tau small positive
   // - sigma small
@@ -84,44 +81,40 @@ Type objective_function<Type>::operator() ()
   PARAMETER(b_tx);
   dll -= dnorm(b_tx, Type(0), Type(1), true);
 
+  PARAMETER(b_tm);
+  dll -= dnorm(b_tm, Type(0), Type(1), true);
+
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
   PQ<Type> KM;
   vector<Type> qrs(N_PAR), eta(N_PAR);
 
-  vector<Type> indiv_ll(A.size());
-  indiv_ll.setZero();
-
-  auto fill_qrs = [&](Type age, int i)
+  auto fill_qrs = [&](Type age, int i) 
   {
     for (int z = 0; z < N_PAR; z++) {
       Type tau_tmp = exp(log_tau[z] + tau_aai[z] * aai[i]);
       eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau_tmp);
     }
     eta[2] += b_tx * tx[i];
+    eta({3, 4, 5, 6}) += b_tm * tm[i];
     qrs = exp(eta);
   };
 
-  matrix<Type> Pm(N_Q, N_Q), Qm(N_Q, N_Q);
-  Type ll_val = 0;
-
-  for (int i = 0; i < A.size(); i++)
+  for (int i = 0; i < A.size(); i++) 
   {
-    if (fit[i] == 0)
-    {
+    int m_size = fit[i];
+    if (m_size == 3) {
       fill_qrs(dstart[i], i);
-      Qm = KM(qrs, false, false);
-      ll_val = log(Qm(A[i], Z[i]) + eps);
+      dll -= n[i] * log(KM(qrs, m_size)(A[i], Z[i]) + eps);
+    } else {
+      matrix<Type> P = matrix<Type>::Identity(m_size, m_size);
+      for (int j = istart[i]; j < end[i]; j++) {
+        fill_qrs(Type(j), i);
+        P = P * KM(qrs, m_size);
+      }
+      dll -= n[i] * log(P(A[i], Z[i]) + eps);
     }
-    else if (fit[i] == 1)
-    {
-      fill_qrs(dstart[i], i);
-      Pm = KM(qrs, false, false);
-      ll_val = log(Pm(A[i], Z[i]) + eps);
-    }
-    dll -= n[i] * ll_val;
-    indiv_ll[i] = -n[i] * ll_val;
   }
 
   SIMULATE
@@ -129,13 +122,12 @@ Type objective_function<Type>::operator() ()
     int n_sim = sim_data.rows();
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
     for (int i = 0; i < n_sim; i++) {
-      Type age = sim_data(i, 0);
       for (int z = 0; z < N_PAR; z++)
-        eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau[z]);
+        eta[z] = itc[z] + logSHASHz(sim_data(i, 0), mu[z], sigma[z], nu[z], tau[z]);
       eta[2] += b_tx * sim_data(i, 1);
+      eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2);
       qrs = exp(eta);
-      Pm = KM(qrs, false, false);
-      PP.col(i) = Pm;
+      PP.col(i) = KM(qrs, 7);
     }
     REPORT(PP);
   }

@@ -122,6 +122,7 @@ ooo %>%
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
+rm(list = ls())
 d <- readRDS(here('data/cleaned.rds'))
 library(haven)
 d %>%
@@ -158,6 +159,12 @@ d %>%
     sameYear = if_else(age == M, T, F, missing = F)
   ) %>%
   mutate(
+    fit = case_when(
+      u == 'neverOnce' ~ 3,
+      u == 'once' & ms == 'M' ~ 3, # married and never move away
+      u == 'once' ~ 6,
+      otherwise ~ 7
+    ),
     afs = X,
     afm = M,
     yob = cmc_to_year(dob),
@@ -172,10 +179,11 @@ sv <- unique(tmp$lab)
 dir.create(here("data/svw"), F)
 
 parallel::mclapply(sv, function(i) {
-    cat(i, "...")
+    cat(i, "...\n")
     tmp %>%
       filter(lab == i) %>%
       drop_na(value) %>%
+      # nrow # n before splitting
       group_by(id) %>%
       mutate(
         value2 = lead(value),
@@ -195,28 +203,22 @@ parallel::mclapply(sv, function(i) {
       ) %>%
       ungroup() %>%
       filter(!(!norep & is.na(value2))) %>%
-      select(cc, sv, sex, id, aai, A, Z, start, end, afs, afm, kish) %>%
-      mutate(
+      mutate( 
         # recode to zero and use as covariate
         tx  = if_else(start - afs < 0 | is.na(afs), 0, start - afs),
         tm  = if_else(start - afm < 0 | is.na(afm), 0, start - afm),
       ) %>%
-      group_by(cc, sv, sex, aai, A, Z, start, end, tx, tm) %>%
-      summarise(n = round(sum(kish), 6)) %>%
+      # nrow # n before grouping
+      group_by(cc, sv, sex, fit, yob, aai, afs, afm, A, Z, start, end) %>%
+      summarise(n = round(sum(kish), 6), .groups = 'drop') %>%
       ungroup() %>%
+      # nrow # n after grouping
       write.csv(here("data/svw", paste0(i, ".csv")), row.names = FALSE)
 },
 mc.cores = 6
 ) %>% invisible()
 
-
 new_d <- vroom::vroom(list.files(here('data/svw'), full.names = T))
-# add tests later if found
-new_d %>% filter(start == end) %>% nrow() %>% mustbe(0)
-new_d %>% count(A, Z) %>% nrow() %>% mustbe(10)
-new_d %>% filter(end < start) %>% nrow() %>% mustbe(0)
-new_d %>% count(cc) %>% nrow() %>% mustbe(37)
-write.csv(new_d, here('data', 'new_d.csv'))
 bz2_file <- bzfile(here("data", "new_dw.csv.bz2"))
 write.csv(new_d, bz2_file, row.names = FALSE)
 ```

@@ -192,7 +192,7 @@ birth to 1-year interval, resulting $>5$ million rows data.
 ## Transition hazard model
 
 \noindent The time-varying transition rates between the states is described with
-the time-varying intensity matrix $Q(t, \mathbf{X})$, 
+the general time-varying intensity matrix $Q(t, \mathbf{X})$, 
 \begin{equation}\label{mat:Q}
 \scriptsize
 Q = 
@@ -222,8 +222,7 @@ in data, we constrained the rates of dissolution to be the same for ($M$) and
 marriage dissolution states ($S, D, W$) are only informed by the number of
 individuals with more than once union and currently married without knowing from
 which state the individual had remarried. Thus, we constrained $\lambda_{47} =
-\lambda_{57} = \lambda_{67}$. Among those who had only once or none unions, we
-evaluated only the submatrix block $Q_{6\times 6}$ excluding state R.
+\lambda_{57} = \lambda_{67}$. 
 
 The general transition intensities between state $i$ and $j$ over ages $t =
 1,2,...,$ is
@@ -275,14 +274,21 @@ possible paths traverse through every single 1-year steps, i.e.,
 $$P(t, t + k) \approx \prod_{i = 0}^k \text{expm}(Q(t + i))$$
 with $Q(t_k)$ is evaluated at the start of the interval. The likelihood is then the 
 corresponding matrix's element obsevations.
+As theoretically all valid transitions are allowed within a 1-year time step
+using the matrix exponential approximation, a submatrice of
+\cref{mat:Q}, excluding the R state was used to evaluate the likelihood of those
+who has never remarried.
 
-The model's parameters was estimated using empirical Bayes approach. The
-standard normal prior were chosen for the unrestricted parameters, and the
+Computing the matrix exponential is an expensive process
+[@molerNineteenDubiousWays2003], thus we gathered episodes with the same profile
+into the same row and weight the likelihood contribution with sum of their
+weights. The model's parameters was estimated using empirical Bayes approach.
+The standard normal prior were chosen for the unrestricted parameters, and the
 half-normal prior was used for positive parameters sampling on logarith scale.
 We computed posterior medians and 95% uncertainty intervals (95% UI) of the
 outcomes of interests, including the rate, transition probability, and hazard by
 ages, using posterior samples of 3000 parameters. The model and likelihood
-calculation were implemented with Template Model Builder which can be accessed
+calculation were implemented with Template Model Builder [@kristensenTMBAutomaticDifferentiation2016] which can be accessed
 on Github's repository [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm). 
 
 # Results
@@ -311,31 +317,25 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
 ```
 
 ```{r, loadata}
+state_order <-c("V", "X", "M", "S", "D", "W", "R")
 vroom::vroom(here("data/new_dw.csv.bz2")) %>%
   mutate(
-    A = case_when(A == "V" ~ 0, A == "X" ~ 1, A == "M" ~ 2, A == "S" ~ 3, A == "D" ~ 4, A == "W" ~ 5, A == "R" ~ 6),
-    Z = case_when(Z == "V" ~ 0, Z == "X" ~ 1, Z == "M" ~ 2, Z == "S" ~ 3, Z == "D" ~ 4, Z == "W" ~ 5, Z == "R" ~ 6),
-    # across(where(is.numeric), as.integer)
-  ) %>%
-  mutate(
-    fit = case_when(
-      A != Z & (end - start == 1) & Z != 6 ~ 0,
-      A == Z & (end - start == 1) ~ 1,
-      otherwise ~ 2
-    )
+    A = match(A, state_order) - 1, 
+    Z = match(Z, state_order) - 1, 
+    fit = case_when(A < 2 ~ 3, otherwise ~ fit/11), 
+    yob = scale(yob)
   ) %>%
   allot(full_d)
 
 full_d %>%
   filter(cc == "CG") %>%
-  select(A, Z, aai, start, end, tx, tm, n, fit) %>%
+  select(A, Z, yob, aai, start, end, tx, tm, n, fit) %>%
   mutate(
     dstart = as.double(start),
     istart = start,
     aai = scale(aai)
   ) %>%
   filter(dstart > 0) %>%
-  filter(Z < 3) %>%
   allot(tdt)
 ```
 
@@ -346,21 +346,21 @@ tdt %>%
   group_by(start) %>%
   summarise(
     tx = mean(tx),
+    tm = mean(tm),
     .groups = "drop"
-  ) %>%
+  ) %>% 
   bind_rows(
     anti_join(tibble(
       start = 1:(max(tdt$end) + 1),
-      tx = 0
+      tx = 0, tm = 0,
     ), ., by = "start")
   ) %>%
   arrange(start) %>%
-  mutate(gap = lead(start) - start) %>%
   allot(sim_data)
 ```
 
 ```{r, prepmodelfit}
-N_PAR = 3
+N_PAR = 7
 data <- list()
 data$n_age <- max(tdt$end) + 1 # include zero
 data$sim_data = as.matrix(sim_data)
@@ -368,12 +368,13 @@ data$sim_data = as.matrix(sim_data)
 data <- modifyList(data, as.list(tdt))
 
 init <- list(
-  mu = c(2.6, 2.8, 2.9),
-  log_sigma = c(-2, -2, .1),
-  log_nu = c(.5, -2, -1),
-  log_tau = c(-2, -.5, .8),
-  tau_aai = c(-.04, -.05, -.2),
+  mu = c(2.6, 2.8, 2.9, 2.7, 2.7, 2.7, 2.7),
+  log_sigma = c(-2, -2, .1, -2, -2, -2, -2),
+  log_nu = c(.5, -2, -1, -2, -2, -2, -2),
+  log_tau = c(-2, -.5, .8, -2, -2, -2, -2),
+  tau_aai = c(-.04, -.05, -.2, -.05, -.05, -.05, -.05),
   b_tx = c(-0.03),
+  b_tm = c(-0.03),
   itc = c(3, -.5, 2)
 )
 str(init)
