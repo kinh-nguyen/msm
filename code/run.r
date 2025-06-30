@@ -24,7 +24,7 @@ allot(tdt)
 # predicting data by age for average duration of tx and tm
 tdt %>%
   filter(A == 1 | A == 2) %>%
-  group_by(start) %>%
+  group_by(dstart) %>%
   summarise(
     tx = mean(tx),
     tm = mean(tm),
@@ -32,11 +32,11 @@ tdt %>%
   ) %>% 
   bind_rows(
     anti_join(tibble(
-      start = 1:(max(tdt$end) + 1),
+      dstart = 1:(max(tdt$end) + 1),
       tx = 0, tm = 0,
-    ), ., by = "start")
+    ), ., by = "dstart")
   ) %>%
-  arrange(start) %>%
+  arrange(dstart) %>%
 allot(sim_data)
 
 N_PAR = 7
@@ -88,44 +88,67 @@ pe = tibble(
   VM = P_yearly[1,3,],
   XX = P_yearly[2,2,],
   XM = P_yearly[2,3,],
+  MM = P_yearly[3,3,],
+  MS = P_yearly[3,4,],
+  MD = P_yearly[3,5,],
+  MW = P_yearly[3,6,],
 ) %>% 
 pivot_longer(-start)
 
+# empirical up to M
 tdt %>%
+  rename(start = dstart) %>% 
   filter(A < 2, Z <= 2) %>%
   group_by(A, start, tx) %>%
   summarise(n_risk = sum(n), .groups = "drop") %>%
   allot(at_risk)
 
 tdt %>%
+  rename(start = dstart) %>% 
   filter(A < 2, Z <= 2) %>%
   group_by(A, Z, start, tx) %>%
   summarise(n_move = sum(n), .groups = "drop") %>%
   left_join(at_risk, by = c("A", "start", "tx")) %>%
   mutate(p_empirical = n_move / n_risk) %>% 
-  mutate(
-    A = case_when(A == 0 ~ 'V', A == 1 ~ 'X', A == 2 ~ "M", A == 3 ~ "S", A == 4 ~ "D", A == 5 ~ "W", A == 6 ~ 'R', otherwise ~ NA_character_),
-    Z = case_when(Z == 0 ~ 'V', Z == 1 ~ 'X', Z == 2 ~ "M", Z == 3 ~ "S", Z == 4 ~ "D", Z == 5 ~ "W", Z == 6 ~ 'R', otherwise ~ NA_character_),
-    name = paste0(A,Z)) %>% 
-  full_join(pe, by = c("start", "name")) %>% 
 allot(pd)
 
-g <- pd %>%
-  mutate(group = case_when(
-    A == "V" ~ 1,
-    A == "X" ~ 2,
-    A == "M" ~ 3,
-  ), 
-    p_empirical = ifelse(A == "M", NA_real_, p_empirical),
+# stepwise empirical for MS MD MW
+purrr::map_dfr(3:5, \(x) {
+  tdt %>% 
+  filter(A == 2, fit != 7) %>% 
+    mutate(
+      l =  dstart,
+      u =  case_when(
+        A == Z ~ Inf,
+        Z != x ~ Inf,
+        Z == x ~ end,
+      )
+    ) -> tmp
+    icenReg::ic_np(tmp[, c('l', 'u')], weights = tmp$n) %>% 
+    hz_np()
+  }, .id = 'Z') %>% 
+  transmute(
+    A = 2, Z = as.numeric(Z) + 2, 
+    start = interval_start, 
+    p_empirical = hazard_rate
+  ) %>% 
+allot(steps_mj)
+
+pd %>% 
+  bind_rows(steps_mj) %>%   
+  filter(A != Z, start > 0, start < 45) %>% 
+  mutate(
+    A = state_order[A + 1],
+    Z = state_order[Z + 1],
+    name = paste0(A,Z),
   ) %>%
-  filter(A != "M") %>%
-  filter(start > 0) %>% 
-  ggplot(aes(start, p_empirical)) +
-  geom_point(aes(size = n_risk, color = factor(name)), shape = 21) +
-  geom_line(aes(y = value, color = factor(name))) +
-  ggh4x::facet_grid2(
-    cols = vars(group),
-    scales = "free_y",
-  ) 
+  left_join(pe, char(start, name)) %>% 
+  mutate(
+    name = factor(name, levels = char(VX, VM, XM, MS, MD, MW))
+  ) %>% 
+  ggplot(aes(start, p_empirical, color = name)) +
+  geom_step() +
+  geom_line(aes(y = value), linewidth = 1.2) +
+  facet_wrap(~name, scale = 'free_y')
 
 ggsave('g.pdf', g, width = 7, height = 7)

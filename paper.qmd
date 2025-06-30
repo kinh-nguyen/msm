@@ -302,6 +302,7 @@ library(ktools)
 # library("expm")
 # remotes::install_github('kaskr/adcomp/TMB')
 library("TMB")
+library(icenReg)
 library(ggh4x)
 # remotes::install_github("teunbrand/elementalist")
 library(elementalist)
@@ -314,23 +315,56 @@ k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
         legend.box.background = element_rect_round(fill = "white", color = "grey90", radius = unit(0.2, "snpc"))
     )
 }
+hz_np <- function(fit_np) {
+  df <- data.frame(
+    time = fit_np$T_bull_Intervals[2, ],
+    p_mass = fit_np$p_hat
+  )
+  agg_data <- aggregate(p_mass ~ time, data = df, FUN = sum)
+  surv_prob <- 1 - cumsum(agg_data$p_mass)
+  surv_estimates <- data.frame(
+    time = c(0, agg_data$time),
+    surv_prob = c(1, surv_prob)
+  )
+  n <- nrow(surv_estimates)
+  hz_df <- data.frame(
+    interval_start = surv_estimates$time[-n],
+    interval_end = surv_estimates$time[-1],
+    S_t_prev = surv_estimates$surv_prob[-n],
+    S_t_curr = surv_estimates$surv_prob[-1]
+  )
+  hz_df$duration <- hz_df$interval_end - hz_df$interval_start
+  valid_rows <- hz_df$duration > 0 & hz_df$S_t_prev > 0
+  hz_df <- hz_df[which(valid_rows), ]
+  hz_df$hazard_rate <- (hz_df$S_t_prev - hz_df$S_t_curr) / (hz_df$S_t_prev * hz_df$duration)
+  return(
+    data.frame(
+      interval_start = hz_df$interval_start,
+      interval_end = hz_df$interval_end,
+      hazard_rate = hz_df$hazard_rate
+    )
+  )
+}
 ```
 
 ```{r, loadata}
 state_order <-c("V", "X", "M", "S", "D", "W", "R")
-vroom::vroom(here("data/new_dw.csv.bz2")) %>%
+full_d <- vroom::vroom(here("data/new_dw.csv.bz2"))
+ 
+full_d %>% 
+  filter(cc == "CG") %>% 
   mutate(
     A = match(A, state_order) - 1, 
     Z = match(Z, state_order) - 1, 
-    fit = case_when(A < 2 ~ 3, otherwise ~ fit/11), 
-    yob = scale(yob)
-  ) %>%
-  allot(full_d)
-
-full_d %>%
-  filter(cc == "CG") %>%
-  select(A, Z, yob, aai, start, end, tx, tm, n, fit) %>%
+    fit = case_when(A < 2 ~ 3, otherwise ~ fit), 
+    yob = scale(yob), 
+    tx = start - afs, 
+    tm = start - afm
+  ) %>% 
+  select(A, Z, yob, afm, aai, start, end, tx, tm, n, fit) %>%
   mutate(
+    tx = if_else(tx < 0 | is.na(tx), 0, tx),
+    tm = if_else(tm < 0 | is.na(tm), 0, tm),
     dstart = as.double(start),
     istart = start,
     aai = scale(aai)
@@ -340,7 +374,7 @@ full_d %>%
 ```
 
 ```{r}
-# predicting data by age for average duration
+# predicting data by age for average duration of tx and tm
 tdt %>%
   filter(A == 1 | A == 2) %>%
   group_by(start) %>%
@@ -356,7 +390,7 @@ tdt %>%
     ), ., by = "start")
   ) %>%
   arrange(start) %>%
-  allot(sim_data)
+allot(sim_data)
 ```
 
 ```{r, prepmodelfit}
@@ -375,7 +409,7 @@ init <- list(
   tau_aai = c(-.04, -.05, -.2, -.05, -.05, -.05, -.05),
   b_tx = c(-0.03),
   b_tm = c(-0.03),
-  itc = c(3, -.5, 2)
+  itc = c(3, -.5, 2, 3, 3, 3, 3)
 )
 str(init)
 ```
