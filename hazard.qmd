@@ -1,0 +1,145 @@
+---
+title: "Hazard Functions"
+format: html
+execute:
+  echo: false
+  warning: false
+  message: false
+editor:
+    render-on-save: true
+---
+
+```{r}
+#| eval: false
+Type = identity
+
+logspace_add <- function(logx, logy) {
+    pmax (logx, logy) + log1p (exp (-abs (logx - logy)))
+}
+
+LLGx <- function(t, a, b) {
+    log_t = log(t)
+    log_tma = log_t - log(a)
+    lnum = log(b) - log(a) + b * log_tma - log_tma
+    lden = logspace_add(0, b * log_tma)
+    exp(lnum - lden)
+}
+
+plotl(x, LLGx(x, 20, 7))
+plotl(x, LLGx(x, exp(0.0009976109), exp(0.1186353)))
+
+hIGAMMA <- function(x, mu, sigma) {
+    # sigma = a^-0.5
+    # mu = b / (a + 1)
+    a = 1 / (sigma * sigma)
+    b = mu * (a + 1)
+    log_num = a * log(b) - (a + Type(1.0)) * log(x) - b / x
+    log_den = pgamma(b / x, shape = a, scale = 1, log.p = T) + lgamma(a)
+    exp(log_num - log_den)
+}
+
+hz <- hazardFun(family = "IGAMMA")
+sigma = 0.1660486
+mu = 16.9448802
+
+f = dIGAMMA(x, mu, sigma)
+S = pIGAMMA(x, mu, sigma, lower.tail = FALSE)
+f_log = dIGAMMA(x, mu, sigma, log = T)
+S_log = pIGAMMA(x, mu, sigma, lower.tail = F, log.p = TRUE)
+
+plot(x, f / S)
+lines(x, exp(f_log - S_log), col = "blue")
+points(x, hz(x, mu = mu, sigma = sigma), col = "red")
+```
+
+## logSHASH
+
+```{r}
+mu = log(20)
+sigma = log(5)
+nu = 2
+tau = 0
+y = 1:50
+M_PI <- pi
+z <- (log(y) - mu) / sigma
+shz <- log(z + sqrt(1 + z^2))
+e1 <- exp(tau * shz)
+e2 <- exp(-nu * shz)
+r_val <- 0.5 * (e1 - e2)
+c_val <- 0.5 * (tau * e1 + nu * e2)
+log_d <- log(c_val) - 0.5 * r_val * r_val - 0.5 * log(2 * M_PI) - log(sigma) - 0.5 * log(1 + z * z) - log(y)
+
+gen.Family("SHASH", type = "log")
+log_d2 <- dlogSHASH(y, mu, sigma, nu, tau, log = TRUE)
+
+plot(log_d, log_d2, xlab = "log_d", ylab = "log_d2")
+abline(0, 1, col = "red")
+
+F <- pnorm(r_val)
+
+hSHASH <- hazardFun(family = "logSHASH")
+
+ff <- dlogSHASH(y, mu, sigma, nu, tau)
+SS <- plogSHASH(y, mu, sigma, nu, tau, lower.tail = FALSE)
+lff <- dlogSHASH(y, mu, sigma, nu, tau, log = TRUE)
+lSS <- plogSHASH(y, mu, sigma, nu, tau, log.p = TRUE, lower.tail = FALSE)
+hgss <- hSHASH(y, mu=mu, sigma=sigma, nu = nu, tau = tau)
+
+plot(exp(log_d) / (1 - F), type = "l", col = "blue", xlab = "y", ylab = "Hazard Function")
+points(y, ff/SS, col = "green", pch = 16)
+points(y, exp(lff - lSS), col = "blue", pch = 2)
+points(y, hgss, col = "red", pch = 3)
+legend("right",
+    legend = c("Manual", "f/S", "exp(log f - log S)", "hazardFun"),
+    col = c("blue", "green", "blue", "red"), pch = c(1, 16, 2, 3)
+)
+```
+
+# transforming shash
+
+```{r}
+#| eval: false
+gen.Family("SHASH", type = "log")
+y <- 1:50
+f <- dlogSHASH(y, mu = log(20), sigma = log(5), nu = 5, tau = 0)
+F <- plogSHASH(y, mu = log(20), sigma = log(5), nu = 5, tau = 0)
+plotl(y, f)
+plotl(y, F)
+plotl(y, f / (1 - F))
+points(y, hazardFun(family = "logSHASH")(y, mu = log(20), sigma = log(5), nu = 5, tau = 0))
+```
+
+```{r}
+library(ktools)
+gen_inla_rw(sd = 0.01)[, 1]  %>% exp %>% plotl()
+INLA:::inla.rw(10, order = 1, scale.model = TRUE)
+```
+
+```{r}
+#| eval: false
+x <- seq(1, 80, 1)
+hzf <- function(fname) {
+    dfun <- paste0("d", fname)
+    pfun <- paste0("p", fname)
+    pdf <- eval(parse(text = dfun))
+    cdf <- eval(parse(text = pfun))
+    fun <- function(...) {
+      lpt <- log(pdf(...))
+      lst <- log(1 - cdf(..., lower.tail = TRUE, log = FALSE))
+      exp(lpt - lst)
+    }
+    fun
+}
+
+plotl(x, hzf("GB2")(x, mu = 15, sigma = 19, nu = 4, tau = 1)) # 
+# tau scale up and down
+# nu left to right
+# increase sigma squeeze the density (steeper decrease)
+
+plotl(x, hzf("SHASHo2")(x, mu = 1, sigma = 1, nu = 1, tau = 1)) # DAGUM
+
+plotl(x, hzf("BCPE")(x, mu = 20, sigma = .3, nu = 1.2, tau = .9)) 
+# smaller nu moves right tail down
+# maller tau also moves right tail down
+plotl(x, hzf("BCPE")(x, mu = 20, sigma = .3, nu = 1.2, tau = .9)) 
+```
