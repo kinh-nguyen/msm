@@ -25,6 +25,24 @@ struct PQ {
     };
 };
 
+template <class Type> 
+struct Qmatrix {
+    matrix<Type> Q = matrix<Type>(N_Q, N_Q);
+    Qmatrix () {};
+    matrix<Type> operator() (vector<Type> q_rs, int size) {
+      Q.setZero();
+      Q(0, 1) = q_rs(0); // debut
+      Q(0, 2) = q_rs(1); // marriage from virgin
+      Q(1, 2) = q_rs(2); // marriage from debut
+      Q(2, {3, 4, 5}) = q_rs({3, 4, 5}); 
+      Q({3, 4, 5}, 6) = q_rs({6, 6, 6}); 
+      Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
+      Q.diagonal() = Type(-1) * Q.rowwise().sum();
+      matrix<Type> q_sub = Q.block(0, 0, size, size);
+      return q_sub;
+    };
+};
+
 template <class Type>
 Type logSHASHz(Type t, Type mu, Type sigma, Type nu, Type tau)
 {
@@ -84,7 +102,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
-  PQ<Type> KM;
+  Qmatrix<Type> Q;
   vector<Type> qrs(N_PAR), eta(N_PAR);
 
   auto fill_qrs = [&](Type age, int i) 
@@ -97,40 +115,58 @@ Type objective_function<Type>::operator() ()
     eta({3, 4, 5, 6}) += b_tm * tm[i];
     qrs = exp(eta);
   };
+  
 
-  for (int i = 0; i < A.size(); i++) 
+  for (int i = 0; i < A.size(); i++)
   {
+    Type a = dstart[i];
+    Type b = end[i];
+    Type Delta = b - a;
+    int M = CppAD::Integer(Delta);
     int m_size = fit[i];
-    if (m_size == 3) {
-      fill_qrs(dstart[i], i);
-      dll -= n[i] * log(KM(qrs, m_size)(A[i], Z[i]) + eps);
-    } else {
-      vector<Type> vp(m_size);
-      vp.setZero();
-      vp(A[i]) = 1.;
-      for (int j = istart[i]; j < end[i]; j++)
-      {
-        fill_qrs(Type(j), i);
-        matrix<Type> km = KM(qrs, m_size);
-        vp = vp.matrix() * km;
-      }
-      dll -= n[i] * log(vp(Z[i]) + eps);
+    matrix<Type> Qk(m_size, m_size);
+    matrix<Type> Rbar(m_size, m_size);
+    Rbar.setZero();
+    Type lambda_max = 0;
+    for (int m = 0; m < M; m++) {
+      Type t_m = dstart[i] + (Delta / Type(M)) * (Type(m) + Type(0.5));
+      fill_qrs(t_m, i);
+      Qk = Q(qrs, m_size);
+      Type qmax = Qk.diagonal().cwiseAbs().maxCoeff();
+      lambda_max = 0.5 * (lambda_max + qmax + CppAD::abs(lambda_max - qmax));
+      matrix<Type> Rk = Qk / lambda_max;
+      for (int e = 0; e < m_size; m++) Rk(e, e) += 1;
+      Rbar = Rbar + Rk;
     }
+    Rbar /= Type(M);
+    // sum series P = sum_{k=0}^Kmax e^{-λΔ}(λΔ)^k/k! * Rbar^k
+    int Kmax = M + 1;
+    matrix<Type> term(m_size, m_size),
+        Psum(m_size, m_size);
+    term.setIdentity();
+    Psum.setZero();
+    Type weight = exp(-lambda_max * Delta);
+    for (int k = 0; k <= Kmax; k++) {
+      Psum += weight * term;
+      weight *= (lambda_max * Delta) / Type(k + 1);
+      term = Rbar * term;
+    }
+    dll -= log(Psum(A[i], Z[i]) + Type(1e-16));
   }
 
   SIMULATE
   {
-    int n_sim = sim_data.rows();
-    array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
-    for (int i = 0; i < n_sim; i++) {
-      for (int z = 0; z < N_PAR; z++)
-        eta[z] = itc[z] + logSHASHz(sim_data(i, 0), mu[z], sigma[z], nu[z], tau[z]);
-      eta[2] += b_tx * sim_data(i, 1);
-      eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2);
-      qrs = exp(eta);
-      PP.col(i) = KM(qrs, 7);
-    }
-    REPORT(PP);
+    // int n_sim = sim_data.rows();
+    // array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
+    // for (int i = 0; i < n_sim; i++) {
+    //   for (int z = 0; z < N_PAR; z++)
+    //     eta[z] = itc[z] + logSHASHz(sim_data(i, 0), mu[z], sigma[z], nu[z], tau[z]);
+    //   eta[2] += b_tx * sim_data(i, 1);
+    //   eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2);
+    //   qrs = exp(eta);
+    //   PP.col(i) = KM(qrs, 7);
+    // }
+    // REPORT(PP);
   }
   return dll;
 }
