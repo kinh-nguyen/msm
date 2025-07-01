@@ -70,9 +70,6 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(tau_aai); // one for each transition, small deviation
   dll -= dnorm(tau_aai, Type(0), Type(1), true).sum();
   
-  // - nu must larger positive
-  // - tau small positive
-  // - sigma small
   dll -= dnorm(mu, Type(3), Type(1), true).sum(); // log(20)
   dll -= dnorm(nu, Type(0), Type(1), true).sum() + log_nu.sum();
   dll -= dnorm(sigma, Type(0), Type(1), true).sum() + log_sigma.sum();
@@ -108,12 +105,16 @@ Type objective_function<Type>::operator() ()
       fill_qrs(dstart[i], i);
       dll -= n[i] * log(KM(qrs, m_size)(A[i], Z[i]) + eps);
     } else {
-      matrix<Type> P = matrix<Type>::Identity(m_size, m_size);
-      for (int j = istart[i]; j < end[i]; j++) {
+      vector<Type> vp(m_size);
+      vp.setZero();
+      vp(A[i]) = 1.;
+      for (int j = istart[i]; j < end[i]; j++)
+      {
         fill_qrs(Type(j), i);
-        P = P * KM(qrs, m_size);
+        matrix<Type> km = KM(qrs, m_size);
+        vp = vp.matrix() * km;
       }
-      dll -= n[i] * log(P(A[i], Z[i]) + eps);
+      dll -= n[i] * log(vp(Z[i]) + eps);
     }
   }
 
