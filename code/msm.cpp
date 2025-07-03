@@ -48,15 +48,13 @@ Type objective_function<Type>::operator() ()
   // data
   DATA_IVECTOR(A);
   DATA_IVECTOR(Z);
-  DATA_IVECTOR(istart);
-  DATA_VECTOR(dstart);
+  DATA_VECTOR(start);
   DATA_IVECTOR(end);
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
-  DATA_INTEGER(n_age);
+  DATA_VECTOR(afs);
+  DATA_VECTOR(afm);
   DATA_VECTOR(aai); // centered
-  DATA_VECTOR(tm);
-  DATA_VECTOR(tx);
 
   DATA_MATRIX(sim_data);
 
@@ -93,29 +91,25 @@ Type objective_function<Type>::operator() ()
       Type tau_tmp = exp(log_tau[z] + tau_aai[z] * aai[i]);
       eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau_tmp);
     }
-    eta[2] += b_tx * tx[i];
-    eta({3, 4, 5, 6}) += b_tm * tm[i];
+    Type tx = log(1 + exp(age - afs[i]));
+    Type tm = log(1 + exp(age - afm[i]));
+    eta[2] += b_tx * tx;
+    eta({3, 4, 5, 6}) += b_tm * tm;
     qrs = exp(eta);
   };
 
   for (int i = 0; i < A.size(); i++) 
   {
     int m_size = fit[i];
-    if (m_size == 3) {
-      fill_qrs(dstart[i], i);
-      dll -= n[i] * log(KM(qrs, m_size)(A[i], Z[i]) + eps);
-    } else {
-      vector<Type> vp(m_size);
-      vp.setZero();
-      vp(A[i]) = 1.;
-      for (int j = istart[i]; j < end[i]; j++)
-      {
-        fill_qrs(Type(j), i);
-        matrix<Type> km = KM(qrs, m_size);
-        vp = vp.matrix() * km;
-      }
-      dll -= n[i] * log(vp(Z[i]) + eps);
+    matrix<Type> vp(1, m_size);
+    vp.setZero();
+    vp(0, A[i]) = 1.;
+    for (int j = 0; j < end[i]; j++) {
+      fill_qrs(start[i] + Type(j), i);
+      matrix<Type> km = KM(qrs, m_size);
+      vp = vp * km;
     }
+    dll -= n[i] * log(vp(Z[i]) + eps);
   }
 
   SIMULATE
@@ -125,8 +119,8 @@ Type objective_function<Type>::operator() ()
     for (int i = 0; i < n_sim; i++) {
       for (int z = 0; z < N_PAR; z++)
         eta[z] = itc[z] + logSHASHz(sim_data(i, 0), mu[z], sigma[z], nu[z], tau[z]);
-      eta[2] += b_tx * sim_data(i, 1);
-      eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2);
+      eta[2] += b_tx * sim_data(i, 1); // average time since x
+      eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2); // averate time since m
       qrs = exp(eta);
       PP.col(i) = KM(qrs, 7);
     }

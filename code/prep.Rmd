@@ -122,11 +122,10 @@ ooo %>%
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
-rm(list = ls())
 d <- readRDS(here('data/cleaned.rds'))
 library(haven)
 d %>%
-  select(lab, sex, X = afs, M = marriage_age, dob, age, u = n_union, ms = marital_status, weights) %>%
+  select(lab, sex, afs, afm = marriage_age, dob, aai = age, u = n_union, ms = marital_status, weights) %>%
   filter(weights != 0) %>%
   group_by(lab) %>%
   mutate(
@@ -137,88 +136,84 @@ d %>%
   ungroup() %>%
   select(-weights, -n_eff) %>%
   mutate(
+    across(where(is.labelled), zap_labels),
     id = 1:n(),
     cc = substr(lab, 1, 2),
     sv = substr(lab, 3, 6),
-    across(where(is.labelled), zap_labels),
-    # recoding states
-    X = if_else(X != 0 & M != 0 & X >= M, NA_real_, X), # remove VX if VM
     ms = if_else(ms %in% c("married", "union") & u == "once", "M", ms),
     ms = if_else(ms %in% c("married", "union") & u != "once", "R", ms),
-    ms = if_else(X == 0 & M == 0, "V", ms),
-    ms = if_else(X != 0 & M == 0, "X", ms),
+    ms = if_else(afs == 0 & afm == 0, "V", ms),
+    ms = if_else(afs != 0 & afm == 0, "X", ms),
     ms = if_else(ms == "separated", "S", ms),
     ms = if_else(ms == "divorced", "D", ms),
     ms = if_else(ms == "widowed", "W", ms),
-    # tricks to make states
-    V = 0,
-    X = if_else(X == 0, NA_real_, X),
-    M = if_else(M == 0, NA_real_, M),
-    # interval censored
-    norep = if_else(M > 0 & ms != "M", T, F, missing = F),
-    sameYear = if_else(age == M, T, F, missing = F)
-  ) %>%
-  mutate(
     fit = case_when(
       u == 'neverOnce' ~ 3,
       u == 'once' & ms == 'M' ~ 3, # married and never move away
       u == 'once' ~ 6,
       otherwise ~ 7
     ),
-    afs = X,
-    afm = M,
-    yob = cmc_to_year(dob),
-    aai = age # age at interview
+    sex = if_else(sex == 'female', 'f', 'm'),
+    yob = cmc_to_year(dob)
   ) %>% 
-  pivot_longer(c(V, X, M, age)) %>%
-  mutate(name = if_else(name == "age", ms, name)) %>% 
+  select(-lab, -dob) %>% 
 allot(tmp)
- 
-# Too big the dataset, do sequential insteads
-sv <- unique(tmp$lab)
-dir.create(here("data/svw"), F)
 
-parallel::mclapply(sv, function(i) {
-    cat(i, "...\n")
-    tmp %>%
-      filter(lab == i) %>%
-      drop_na(value) %>%
-      # nrow # n before splitting
-      group_by(id) %>%
-      mutate(
-        value2 = lead(value),
-        ndup = value2 - value,
-        # > 1 interval censored
-        ndup = if_else(norep & row_number() == n() - 1, 1, ndup),
-        ndup = if_else(is.na(ndup), 1, ndup)
-      ) %>%
-      uncount(ndup) %>%
-      mutate(
-        end = 1:n(), start = end - 1,
-        Z = name, A = lag(Z, default = "V"),
-        end = if_else(norep & row_number() == n(), value + 1, end),
-        # married and dissolution in the same year
-        end = if_else(sameYear & row_number() == n(), value + 1, end),
-        start = if_else(sameYear & row_number() == n(), value, start)
-      ) %>%
-      ungroup() %>%
-      filter(!(!norep & is.na(value2))) %>%
-      mutate( 
-        # recode to zero and use as covariate
-        tx  = if_else(start - afs < 0 | is.na(afs), 0, start - afs),
-        tm  = if_else(start - afm < 0 | is.na(afm), 0, start - afm),
-      ) %>%
-      # nrow # n before grouping
-      group_by(cc, sv, sex, fit, yob, aai, afs, afm, A, Z, start, end) %>%
-      summarise(n = round(sum(kish), 6), .groups = 'drop') %>%
-      ungroup() %>%
-      # nrow # n after grouping
-      write.csv(here("data/svw", paste0(i, ".csv")), row.names = FALSE)
+# Too big the dataset, do sequential insteads
+cc <- unique(tmp$cc)
+dir.create(here("data/cc"), F)
+
+parallel::mclapply(cc, function(i) {
+cat(i, '\n')
+tmp %>%
+  filter(cc == i) %>% 
+  mutate(neversex = afs == 0, neverwed = afm == 0) %>% 
+  group_by(neversex, neverwed) %>% 
+  group_modify( ~ {
+    .x$VV = 0 # if (.y$neversex && .y$neverwed)
+    if (!.y$neversex && .y$neverwed) {
+      .x$VX = .x$afs
+      .x$XX = .x$afs + 1
+    }
+    if (!.y$neversex && !.y$neverwed) {
+      .x$VM = if_else(.x$afs >= .x$afm, .x$afm, NA_real_)
+      .x$VX = if_else(.x$afs < .x$afm, .x$afs, NA_real_)
+      .x$XX = if_else(.x$afs < .x$afm, .x$afs + 1, NA_real_)
+      .x$XM = if_else(.x$afs < .x$afm, .x$afm, NA_real_)
+    }
+    if (!.y$neverwed) {
+      .x$MM = if_else(.x$ms == 'M', .x$afm + 1, NA_real_)
+      .x$MS = if_else(.x$ms == 'S', .x$afm + 1, NA_real_)
+      .x$MD = if_else(.x$ms == 'D', .x$afm + 1, NA_real_)
+      .x$MW = if_else(.x$ms == 'W', .x$afm + 1, NA_real_)
+      .x$MR = if_else(.x$ms == 'R', .x$afm + 1, NA_real_)
+    }
+    .x
+  }) %>% 
+  ungroup() %>% 
+  pivot_longer(
+    c(VV, VX, VM, XX, XM, MM, MS, MD, MW, MR), 
+    names_to = 'trans', values_to = 'start'
+  ) %>% 
+  drop_na(start) %>% 
+  select(-starts_with('never'), -u) %>% 
+  group_by(cc, sv, sex, id) %>% 
+  mutate(
+    end = if_else(row_number() == n(), aai, lead(start)),
+    A = substr(trans, 1, 1),
+    Z = substr(trans, 2, 2),
+    d = end - start
+  ) %>%
+  ungroup() %>% 
+  filter(start != end) %>% 
+  group_by(cc, sv, sex, fit, yob, aai, afs, afm, start, end, A, Z, d) %>% 
+  summarise(n = sum(kish), .groups = 'drop') %>%
+  write.csv(here("data/cc", paste0(i, ".csv")), row.names = FALSE)
 },
 mc.cores = 6
 ) %>% invisible()
 
-new_d <- vroom::vroom(list.files(here('data/svw'), full.names = T))
-bz2_file <- bzfile(here("data", "new_dw.csv.bz2"))
+new_d <- vroom::vroom(list.files(here('data/cc'), full.names = T), show_col_types = FALSE)
+bz2_file <- bzfile(here("data", "cc.csv.bz2"))
 write.csv(new_d, bz2_file, row.names = FALSE)
 ```

@@ -3,45 +3,45 @@ library("TMB")
 
 state_order <-c("V", "X", "M", "S", "D", "W", "R")
 
-vroom::vroom(here("data/new_dw.csv.bz2")) %>% 
-  filter(cc == "CG", sex == 'female', sv == 2011) %>% 
-  filter(start > 0) %>%
+vroom::vroom(here("data/cc.csv.bz2"), show_col_types = F) %>% 
+  filter(cc == "CG", sex == 'f') %>% 
+  filter(start > 0) %>% 
   mutate(
     A = match(A, state_order) - 1, 
     Z = match(Z, state_order) - 1, 
-    fit = case_when(A < 2 ~ 3, otherwise ~ fit), 
-    yob = scale(yob), 
-    dstart = as.double(start),
-    istart = start,
-    tx = start - afs, 
-    tm = start - afm,
-    tx = if_else(tx < 0 | is.na(tx), 0, tx),
-    tm = if_else(tm < 0 | is.na(tm), 0, tm),
-    aai = scale(aai)
+    afs = if_else(afs == 0 | is.na(afs), 100, afs), # softmax zero
+    afm = if_else(afm == 0 | is.na(afm), 100, afm), # softmax zero
   ) %>%
-  select(sv, A, Z, yob, aai, istart, dstart, end, tx, tm, n, fit) %>%
+  select(sv, A, Z, yob, aai, start, end, afs, afm, n, fit) %>%
 allot(tdt)
+
 # predicting data by age for average duration of tx and tm
 tdt %>%
+  mutate(
+    tx = log(1 + exp(aai - afs)),
+    tm = log(1 + exp(aai - afm))
+  ) %>% 
   filter(A == 1 | A == 2) %>%
-  group_by(dstart) %>%
+  group_by(start) %>%
   summarise(
-    tx = mean(tx),
-    tm = mean(tm),
+    tx = mean(aai - afs),
+    tm = mean(aai - afm),
     .groups = "drop"
   ) %>% 
   bind_rows(
     anti_join(tibble(
-      dstart = 1:(max(tdt$end) + 1),
+      start = 1:(max(tdt$end) + 1),
       tx = 0, tm = 0,
-    ), ., by = "dstart")
+    ), ., by = "start")
   ) %>%
-  arrange(dstart) %>%
+  arrange(start) %>%
 allot(sim_data)
+
+tdt <- tdt %>% mutate(across(c(aai, yob), ~ scale(.x)[,1]))
 
 N_PAR = 7
 data <- list()
-data$n_age <- max(tdt$end) + 1 # include zero
+
 data$sim_data = as.matrix(sim_data)
 
 data <- modifyList(data, as.list(tdt))
