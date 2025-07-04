@@ -8,10 +8,10 @@
 using Eigen::seqN;
 
 template <class T> 
-struct PQ {
+struct Qs {
     matrix<T> Q = matrix<T>(N_Q, N_Q);
-    PQ () {};
-    matrix<T> operator() (vector<T> q_rs, int size) {
+    Qs () {};
+    matrix<T> operator() (vector<T> q_rs) {
       Q.setZero();
       Q(0, 1) = q_rs(0); // debut
       Q(0, 2) = q_rs(1); // marriage from virgin
@@ -20,8 +20,7 @@ struct PQ {
       Q({3, 4, 5}, 6) = q_rs({6, 6, 6}); 
       Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
       Q.diagonal() = T(-1) * Q.rowwise().sum();
-      matrix<T> q_sub = Q.block(0, 0, size, size);
-      return atomic::expm(q_sub);
+      return Q;
     };
 };
 
@@ -82,7 +81,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
-  PQ<Type> KM;
+  Qs<Type> Q;
   vector<Type> qrs(N_PAR), eta(N_PAR);
 
   auto fill_qrs = [&](Type age, int i) 
@@ -100,16 +99,76 @@ Type objective_function<Type>::operator() ()
 
   for (int i = 0; i < A.size(); i++) 
   {
-    int m_size = fit[i];
-    matrix<Type> vp(1, m_size);
-    vp.setZero();
-    vp(0, A[i]) = 1.;
-    for (int j = 0; j < end[i]; j++) {
-      fill_qrs(start[i] + Type(j), i);
-      matrix<Type> km = KM(qrs, m_size);
-      vp = vp * km;
+    Type lli = 0;
+    if (A[i] == 0) // fit = 3
+    {
+      fill_qrs(start[i], i);
+      Type q0 = qrs[0] + qrs[1];
+      lli = -q0;
+      if (Z[i] == 0)
+        for (int j = 0; j < end[i]; j++)
+        {
+          fill_qrs(start[i] + Type(j), i);
+          lli += -(qrs[0] + qrs[1]);
+        }
+      if (Z[i] == 1) {
+        if (qrs[1] != q0) lli = log(qrs[0]/(qrs[2] - q0) * (exp(-q0) - exp(-qrs[2])));
+        if (qrs[1] == q0) lli = log(qrs[0]) - q0;
+      }
+      if (Z[i] == 2) {
+        Type p00 = exp(-q0);
+        // if (qrs[1] != q0)
+        Type p01 = qrs[0] / (qrs[2] - q0) * (exp(-q0) - exp(-qrs[2]));
+        if (qrs[1] == q0)
+          p01 = qrs[0] * p00;
+        lli = log(1 - p00 - p01);
+      }
     }
-    dll -= n[i] * log(vp(Z[i]) + eps);
+    if (A[i] == 1) { // fit == 3
+      if (Z[i] == 1) 
+        for (int j = 0; j < end[i]; j++) {
+          fill_qrs(start[i] + Type(j), i);
+          lli += -qrs[2];
+        }
+      else
+      {
+        fill_qrs(start[i], i);
+        lli = log(1 - exp(-qrs[2]));
+      }
+    }
+    if (A[i] == 2 && fit[i] == 6) { // change 6 to 4 in R
+      if (Z[i] == 2)
+        for (int j = 0; j < end[i]; j++)
+        {
+          fill_qrs(start[i] + Type(j), i);
+          Type q2 = qrs({3, 4, 5}).sum();
+          lli += -q2;
+        }
+      if (Z[i] != 2) {
+        Type p22sofar = 1, p2jTotal = 0;
+        for (int j = 0; j < end[i]; j++)
+        {
+          fill_qrs(start[i] + Type(j), i);
+          Type q2 = qrs({3, 4, 5}).sum();
+          Type p2jt = qrs[Z[i]] / q2 * (1 - exp(-q2));
+          p2jTotal += p22sofar * p2jt;
+          p22sofar *= exp(-q2);
+        }
+        lli = log(p2jTotal);
+      }
+    }
+    if (A[i] == 2 && fit[i] == 7) { // change 7 to 5 in R?
+      matrix<Type> vp(1, 5);
+      vp << 1, 0, 0, 0, 0;
+      for (int j = 0; j < end[i]; j++)
+      {
+        fill_qrs(start[i] + Type(j), i);
+        matrix<Type> km = Q(qrs).block(2, 2, 5, 5);
+        vp = vp * atomic::expm(km);
+      }
+      lli = log(vp(Z[i]) + eps);
+    }
+    dll -= n[i] * lli;
   }
 
   SIMULATE
@@ -122,7 +181,7 @@ Type objective_function<Type>::operator() ()
       eta[2] += b_tx * sim_data(i, 1); // average time since x
       eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2); // averate time since m
       qrs = exp(eta);
-      PP.col(i) = KM(qrs, 7);
+      PP.col(i) = atomic::expm(Q(qrs));
     }
     REPORT(PP);
   }

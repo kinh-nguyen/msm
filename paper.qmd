@@ -202,7 +202,19 @@ birth to 1-year interval, resulting $>5$ million rows data.
 
 ## States transition
 
-\noindent We defined seven states of transition from virgin from birth ($V$) to currently sexually debuted and not married ($X$), married or in a union ($M$), three states of marriage dissolution including separated ($S$), divorced ($D$), widowed ($W$), and remarried or in a union again ($R$). A remarried event is defined if the respondent reported that there had been more than one union and currently in states M, D, S, W. Transitions are unidirectional for initial life stages and allow for cycles in later marital statuses: V $\to$ {X, M}, X $\to$ M, M $\to$ {S, D, W} $\to$ R, R $\to$ {S, D, W}. From the AFM, the events D, S, W, R are interval censored, and there can be numerous traverse the paths in those with more than once unions. We assumed if a marriage dissolute within a year after married, there was no intermediate states in between, except the current status is remarried.
+\noindent We defined seven states of transition from virgin from birth ($V$) to
+currently sexually debuted and not married ($X$), married or in a union ($M$),
+three states of marriage dissolution including separated ($S$), divorced ($D$),
+widowed ($W$), and remarried or in a union again ($R$). A remarried event is
+defined if the respondent reported that there had been more than one union and
+currently in states M, D, S, W. Transitions are unidirectional for initial life
+stages and allow for cycles in later marital statuses: V $\to$ {X, M}, X $\to$
+M, M $\to$ {S, D, W} $\to$ R, R $\to$ {S, D, W}. From the AFM, the events D, S,
+W, R are interval censored, and there can be numerous traverse the paths in
+those with more than once unions. We assumed if a marriage dissolute within a
+year after married, there was no intermediate states in between, except the
+current status is remarried. Given the cross-sectional survey data, a death 
+state is not included in the model.
 
 ## Transition hazard model
 
@@ -283,26 +295,27 @@ transition probability that an individual in state $i$ at time $t$ will be in
 state $j$ at time $t + 1$ by
 $$\dfrac{d}{dt} P(t, t + 1, \mathbf{X}, \Theta) \approx \text{expm}(Q(t, X, \Theta)).$$
 where `expm` is the matrix exponential function [@vandenhout2020].
-For interval censored observations, those that transited away from state $M$ at
+<!-- For interval censored observations, those that transited away from state $M$ at
 time $t$ to state $j$ at time $t + k$, the likelihood is a total probability of all 
 possible paths traverse through every single 1-year steps, i.e.,
 $$P(t, t + k) \approx \prod_{i = 0}^k \text{expm}(Q(t + i))$$
 with $Q(t_k)$ is evaluated at the start of the interval. The likelihood is then the 
-corresponding matrix's element obsevations.
-As theoretically all valid transitions are allowed within a 1-year time step
+corresponding matrix's element obsevations. -->
+<!-- As theoretically all valid transitions are allowed within a 1-year time step
 using the matrix exponential approximation, a submatrice of
 \cref{mat:Q}, excluding the R state was used to evaluate the likelihood of those
-who has never remarried.
-
+who has never remarried. -->
 Computing matrix exponential is an expensive calculatio
 [@molerNineteenDubiousWays2003]. Thus, where possible, the transition
-probability is derived from submatrices $Q_{sub}$ as follows. In all cases, the
+probability is derived from submatrices $Q_{sub}$ as follows. 
+<!-- In all cases, the
 formula is applied for a 1-year timestep during which the rate of transition is
-constant.
+constant. -->
 
 - For observations VV, VX, VM, let $\lambda_0 = \lambda_{01} + \lambda_{02}$,
   the submatrix is
   $$
+  \scriptsize
   Q_{sub} =
   \begin{pmatrix}
   -\lambda_0 & \lambda_{01} & \lambda_{02} \\
@@ -313,15 +326,16 @@ constant.
   with the probability of remaining virgin is $P_{00} = e^{-\lambda_0}$. The
   probability of transitioning to sexual debut is
   $$
-  P_{01} = \frac{\lambda_{01}}{\lambda_{12}-\lambda_0} \left( e^{-\lambda_0 t} - e^{-\lambda_{12} t} \right), \lambda_0 \neq \lambda_{12}
+  P_{01} = \frac{\lambda_{01}}{\lambda_{12}-\lambda_0} \left( e^{-\lambda_0 } - e^{-\lambda_{12} } \right), \lambda_0 \neq \lambda_{12}
   $$
   or 
-  $P_{01} = \lambda_{01} \cdot t \cdot e^{-\lambda_0 t}, \lambda_0 = \lambda_{12}$,
+  $P_{01} = \lambda_{01} e^{-\lambda_0}, \lambda_0 = \lambda_{12}$,
   and the probability of transitioning to marriage directly is
   $P_{02} = 1 - P_{00} - P_{01}$.
 
 - For observations XX, XM, the only exit is to marriage. The submatrix is
   $$
+  \scriptsize
   Q_{sub} =
   \begin{pmatrix}
   -\lambda_{12} & \lambda_{12} \\
@@ -334,6 +348,7 @@ constant.
 - For cases of MM, MS, MD, MW who have never remarried, let 
   $\lambda_2 = \lambda_{23} + \lambda_{24} + \lambda_{25}$, the submatrix is
   $$
+  \scriptsize
   Q_{sub} =
   \begin{pmatrix}
   -\lambda_2 & \lambda_{23} & \lambda_{24} & \lambda_{25} \\
@@ -342,14 +357,22 @@ constant.
   0 & 0 & 0 & 0
   \end{pmatrix}
   $$
-  in which the probability of remaining in state 2 is $P_{22} = e^{-\lambda_2 t}$.
-  The probability of transitioning from state 2 to state $j = 3, 4, 5$ is
+  in which the probability of remaining in state 2 is $P_{22} = e^{-\lambda_2}$.
+  The probability of transitioning from state 2 to state $j = 3, 4, 5$ in
+  interval t to t + 1 is
   $$
-  P_{2j} = \frac{\lambda_{2j}}{\lambda_2} \left( 1 - e^{-\lambda_2 t} \right).
+  P_{2j} = \frac{\lambda_{2j}}{\lambda_2} \left( 1 - e^{-\lambda_2} \right).
   $$
+  Given an interval censor observation from t to $t + k$, the proability is 
+  calculated as
+  \begin{align*}
+  P_{22} &= \prod_t^{t+k-1} P_{22}(t) \\
+  P_{2j} &= P_{2j}(t) + \sum_{i=t+1}^{t+k-1} \prod_{j=t}^{i-1} P_{22}(j) P_{2j}(i)
+  \end{align*}
 - For cases that has already remarried, which started from M and make all the
   possible path through S, W, D, R, the submatrix is
   $$
+  \scriptsize
   Q_{sub} =
   \begin{pmatrix}
   -\lambda_2 & \lambda_{23} & \lambda_{24} & \lambda_{25} & 0 \\
@@ -359,25 +382,23 @@ constant.
   0 & \lambda_{23} & \lambda_{24} & \lambda_{25} & -\lambda_2
   \end{pmatrix}
   $$
-  Because the system has feedback loops making close-form for $P_{2j}$
-  infeasible. In this case, we compute the matrix exponential $P =
-  \text{expm}(\cdot Q_{sub})$ numerically for each 1-year time steps and 
-  propagate the probability. For example, a currently remarried has 
+  The system has feedback loops making close-form for $P_{2j}$
+  infeasible. Thus, we compute the matrix exponential numerically for each
+  1-year time steps and propagate the probability across the interval. For
+  example, a currently separated but had remarried has the probability
   $$
-  P_{23} = ([1, 0, 0, 0, 0] \cdot \text{expm}(Q_{sub}))_{0,1}
+  P_{23} = ([1, 0, 0, 0, 0] \cdot \prod_t^{t+k} \text{expm}(Q_{sub}(t)))_{(0,1)}
   $$
 
-Computing the matrix exponential is an expensive process
-[@molerNineteenDubiousWays2003], thus we gathered episodes with the same profile
-into the same row and weight the likelihood contribution with sum of their
-weights. The model's parameters was estimated using empirical Bayes approach.
-The standard normal prior were chosen for the unrestricted parameters, and the
+The model's parameters was estimated using empirical Bayes approach. The
+standard normal prior were chosen for the unrestricted parameters, and the
 half-normal prior was used for positive parameters sampling on logarith scale.
 We computed posterior medians and 95% uncertainty intervals (95% UI) of the
 outcomes of interests, including the rate, transition probability, and hazard by
 ages, using posterior samples of 3000 parameters. The model and likelihood
-calculation were implemented with Template Model Builder [@kristensenTMBAutomaticDifferentiation2016] which can be accessed
-on Github's repository [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm). 
+calculation were implemented with Template Model Builder
+[@kristensenTMBAutomaticDifferentiation2016] which can be accessed on Github's
+repository [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm). 
 
 # Results
 
