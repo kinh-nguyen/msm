@@ -95,7 +95,6 @@ format:
         \AtBeginDocument{\hypersetup{colorlinks=true,allcolors=Bittersweet}}
         \ifisnight
             \pagecolor{page1dark}\color{text1dark} 
-            \pagecolor{darkgray}
             \AtBeginDocument{\hypersetup{colorlinks=true,allcolors=pink}}
         \fi
     # linestretch: 1
