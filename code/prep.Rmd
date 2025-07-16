@@ -287,7 +287,7 @@ Mjs <- episodes %>%
   group_by(cc, sv, sex) %>% 
   group_modify( ~ 
     {
-      cat(paste0(.y[1, ], collapse = '='), '\n')
+      cat(paste0(.y[1, ], collapse = ', '), '\n')
       purrr::map_dfr(c('S', 'D', 'W'), \(x) 
       {
         .x %>%
@@ -306,7 +306,7 @@ Mjs <- episodes %>%
           o$Z <- x
         }
         else {
-          o = data.frame( interval_start = 0, interval_end = 0, hazard_rate = 0)
+          o = data.frame(interval_start = 0, interval_end = 0, hazard_rate = 0)
           o$Z <- x
         }
         o
@@ -332,12 +332,9 @@ episodes %>%
   geom_linerange(aes(ymin = l, ymax = u))
 
 Mjs %>%
-  filter(cc == 'AO') %>% 
-  filter(start > 10) %>% 
-  ggplot(aes(start, p_empirical, color = sv)) +
-  geom_point() +
+  ggplot(aes((start), p_empirical, color = sex)) +
+  geom_point(size = .7) +
   scale_y_continuous(trans = 'log') +
-  scale_x_continuous(trans = 'log') +
-  geom_smooth(method = 'lm') +
-  geom_smooth(color = 'red') 
+  geom_smooth(method = 'lm', se = F) +
+  facet_grid(vars(Z), vars(sex))
 ```
