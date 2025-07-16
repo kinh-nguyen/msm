@@ -122,9 +122,8 @@ ooo %>%
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
-d <- readRDS(here('data/cleaned.rds'))
 library(haven)
-d %>%
+readRDS(here('data/cleaned.rds')) %>% 
   select(lab, sex, afs, afm = marriage_age, dob, aai = age, u = n_union, ms = marital_status, weights) %>%
   filter(weights != 0) %>%
   group_by(lab) %>%
@@ -205,7 +204,7 @@ tmp %>%
     d = end - start
   ) %>%
   ungroup() %>% 
-  filter(start != end) %>% 
+  filter(!(start == end & A != 0)) %>% 
   group_by(cc, sv, sex, fit, yob, aai, afs, afm, start, end, A, Z, d) %>% 
   summarise(n = sum(kish), .groups = 'drop') %>%
   write.csv(here("data/cc", paste0(i, ".csv")), row.names = FALSE)
@@ -216,4 +215,129 @@ mc.cores = 6
 new_d <- vroom::vroom(list.files(here('data/cc'), full.names = T), show_col_types = FALSE)
 bz2_file <- bzfile(here("data", "cc.csv.bz2"))
 write.csv(new_d, bz2_file, row.names = FALSE)
+
+# plot match data
+episodes <- vroom::vroom(here("data/new_dw.csv.bz2"), show_col_types = F)
+
+episodes %>%
+  filter(start > 0) %>% 
+  filter(A %in% c('V', 'X'), Z %in% c('V', 'X', 'M')) %>%
+  mutate(
+    tx = start - afs,
+    tx = if_else(is.na(tx)|tx < 0, 0, tx)
+  ) %>% 
+  group_by(cc, sv, sex, A, start, tx) %>%
+  summarise(n_risk = sum(n), .groups = "drop") %>%
+  allot(at_risk)
+
+episodes %>%
+  filter(start > 0) %>% 
+  filter(A %in% c('V', 'X'), Z %in% c('V', 'X', 'M')) %>%
+  mutate(
+    tx = start - afs,
+    tx = if_else(is.na(tx)|tx < 0, 0, tx)
+  ) %>% 
+  group_by(cc, sv, sex, A, Z, start, tx) %>%
+  summarise(n_move = sum(n), .groups = "drop") %>%
+  left_join(at_risk, by = c("cc", "sv", "sex", "A", "start", "tx")) %>%
+  mutate(p_empirical = n_move / n_risk) %>% 
+allot(pd)
+
+write.csv(pd, bzfile(here("data", "pd.csv.bz2")), row.names = FALSE)
+
+pd  %>% 
+  filter(A=='X', Z =='M', sex == 'male') %>% 
+  ggplot(aes(start, p_empirical)) +
+    geom_point(aes(color=sv), add.legend = FALSE) +
+    facet_wrap(~cc, scales = 'free_y')
+
+# stepwise empirical for MS MD MW
+hz_np <- function(fit_np) {
+  df <- data.frame(
+    time = fit_np$T_bull_Intervals[2, ],
+    p_mass = fit_np$p_hat
+  )
+  agg_data <- aggregate(p_mass ~ time, data = df, FUN = sum)
+  surv_prob <- 1 - cumsum(agg_data$p_mass)
+  surv_estimates <- data.frame(
+    time = c(0, agg_data$time),
+    surv_prob = c(1, surv_prob)
+  )
+  n <- nrow(surv_estimates)
+  hz_df <- data.frame(
+    interval_start = surv_estimates$time[-n],
+    interval_end = surv_estimates$time[-1],
+    S_t_prev = surv_estimates$surv_prob[-n],
+    S_t_curr = surv_estimates$surv_prob[-1]
+  )
+  hz_df$duration <- hz_df$interval_end - hz_df$interval_start
+  valid_rows <- hz_df$duration > 0 & hz_df$S_t_prev > 0
+  hz_df <- hz_df[which(valid_rows), ]
+  hz_df$hazard_rate <- (hz_df$S_t_prev - hz_df$S_t_curr) / (hz_df$S_t_prev * hz_df$duration)
+  return(
+    data.frame(
+      interval_start = hz_df$interval_start,
+      interval_end = hz_df$interval_end,
+      hazard_rate = hz_df$hazard_rate
+    )
+  )
+}
+
+Mjs <- episodes %>% 
+  group_by(cc, sv, sex) %>% 
+  group_modify( ~ 
+    {
+      cat(paste0(.y[1, ], collapse = '='), '\n')
+      purrr::map_dfr(c('S', 'D', 'W'), \(x) 
+      {
+        .x %>%
+          filter(A == 'M', fit != 7) %>% 
+          mutate(
+            l =  start,
+            u =  case_when(
+              A == Z ~ Inf,
+              Z != x ~ Inf,
+              Z == x ~ end,
+            )
+          ) -> tmp
+        if (nrow(tmp) != 0) {
+          o = icenReg::ic_np(tmp[, c('l', 'u')], weights = tmp$n) 
+          o = hz_np(o)
+          o$Z <- x
+        }
+        else {
+          o = data.frame( interval_start = 0, interval_end = 0, hazard_rate = 0)
+          o$Z <- x
+        }
+        o
+      }) %>% 
+      transmute(
+        A = 'M', 
+        Z = Z,
+        start = interval_start, 
+        p_empirical = hazard_rate
+      )
+    }
+  )
+
+write.csv(Mjs, file = here('data', 'mjs.csv'), row.names = FALSE)
+
+episodes %>%
+  mutate(tm = aai - afm) %>% 
+  filter(tm > 0) %>% 
+  group_by(aai) %>% 
+  summarise(mean = mean(tm), sd = sd(tm), u = mean  + 2 * sd, l = mean - 2 * sd) %>% 
+  ggplot(aes(aai, mean)) + 
+  geom_point() +
+  geom_linerange(aes(ymin = l, ymax = u))
+
+Mjs %>%
+  filter(cc == 'AO') %>% 
+  filter(start > 10) %>% 
+  ggplot(aes(start, p_empirical, color = sv)) +
+  geom_point() +
+  scale_y_continuous(trans = 'log') +
+  scale_x_continuous(trans = 'log') +
+  geom_smooth(method = 'lm') +
+  geom_smooth(color = 'red') 
 ```
