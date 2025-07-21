@@ -56,8 +56,6 @@ Type objective_function<Type>::operator() ()
   DATA_VECTOR(afm);
   DATA_VECTOR(aai); // centered
 
-  DATA_MATRIX(sim_data);
-
   PARAMETER_VECTOR(mu);
   PARAMETER_VECTOR(log_sigma);
   vector<Type> sigma = exp(log_sigma);
@@ -120,13 +118,15 @@ Type objective_function<Type>::operator() ()
 
   SIMULATE
   {
-    int n_sim = sim_data.rows();
+    int n_sim = max(aai);
     array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
     for (int i = 0; i < n_sim; i++) {
-      for (int z = 0; z < N_PAR; z++)
-        eta[z] = itc[z] + logSHASHz(sim_data(i, 0), mu[z], sigma[z], nu[z], tau[z]);
-      eta[2] += b_tx * sim_data(i, 1); // average time since x
-      eta({3, 4, 5, 6}) += b_tm * sim_data(i, 2); // averate time since m
+      for (int z = 0; z < 3; z++)
+        eta[z] = itc[z] + logSHASHz(Type(i), mu[z], sigma[z], nu[z], tau[z]);
+      for (int z = 3; z < 7; z++)
+        eta[z] = itc[z] + gp_b[z - 3] * Type(i);
+      eta[2] += b_tx;            // 1 year since x
+      eta({3, 4, 5, 6}) += b_tm ; // 1 year since m
       qrs = exp(eta);
       PP.col(i) = KM(qrs, 7);
     }
