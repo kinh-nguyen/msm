@@ -82,14 +82,20 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(itc);
   dll -= dnorm(itc, Type(0), Type(1), true).sum();
 
+  PARAMETER_VECTOR(gp_b);
+  dll -= dnorm(gp_b, Type(0), Type(1), true).sum();
+
   PQ<Type> KM;
   vector<Type> qrs(N_PAR), eta(N_PAR);
 
   auto fill_qrs = [&](Type age, int i) 
   {
-    for (int z = 0; z < N_PAR; z++) {
+    for (int z = 0; z < 3; z++) {
       Type tau_tmp = exp(log_tau[z] + tau_aai[z] * aai[i]);
       eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau_tmp);
+    }
+    for (int z = 3; z < 7; z++) {
+      eta[z] = itc[z] + gp_b[z - 3] * age;
     }
     Type tx = log(1 + exp(age - afs[i]));
     Type tm = log(1 + exp(age - afm[i]));
