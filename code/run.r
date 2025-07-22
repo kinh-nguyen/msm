@@ -87,53 +87,18 @@ pe = tibble(
 ) %>% 
 pivot_longer(-start)
 
-# empirical up to M
-tdt %>%
-  rename(start = dstart) %>% 
-  filter(A < 2, Z <= 2) %>%
-  group_by(A, start, tx) %>%
-  summarise(n_risk = sum(n), .groups = "drop") %>%
-  allot(at_risk)
+ggplot(pe, aes(start, value, color = name)) + geom_line() +
+facet_wrap(~name, scales = 'free_y')
 
-tdt %>%
-  rename(start = dstart) %>% 
-  filter(A < 2, Z <= 2) %>%
-  group_by(A, Z, start, tx) %>%
-  summarise(n_move = sum(n), .groups = "drop") %>%
-  left_join(at_risk, by = c("A", "start", "tx")) %>%
-  mutate(p_empirical = n_move / n_risk) %>% 
-allot(pd)
+pd <- vroom::vroom('data/pd.csv.bz2')
+mj <- vroom::vroom('data/mjs.csv')
 
-# stepwise empirical for MS MD MW
-purrr::map_dfr(3:5, \(x) {
-  tdt %>% 
-  filter(A == 2, fit != 7) %>% 
-    mutate(
-      l =  dstart,
-      u =  case_when(
-        A == Z ~ Inf,
-        Z != x ~ Inf,
-        Z == x ~ end,
-      )
-    ) -> tmp
-    icenReg::ic_np(tmp[, c('l', 'u')], weights = tmp$n) %>% 
-    hz_np()
-  }, .id = 'Z') %>% 
-  transmute(
-    A = 2, Z = as.numeric(Z) + 2, 
-    start = interval_start, 
-    p_empirical = hazard_rate
-  ) %>% 
-allot(steps_mj)
-
-pd %>% 
-  bind_rows(steps_mj) %>%   
-  filter(A != Z, start > 0, start < 45) %>% 
-  mutate(
-    A = state_order[A + 1],
-    Z = state_order[Z + 1],
-    name = paste0(A,Z),
-  ) %>%
+pd %>% filter(cc == CC, sex == 'female') %>% 
+bind_rows(
+mj %>% filter(cc == CC, sex == 'female')
+) %>% 
+  filter(A != Z, start > 0) %>% 
+  mutate(name = paste0(A,Z)) %>%
   left_join(pe, char(start, name)) %>% 
   mutate(
     name = factor(name, levels = char(VX, VM, XM, MS, MD, MW))
