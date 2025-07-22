@@ -7,22 +7,23 @@
 
 using Eigen::seqN;
 
-template <class T> 
-struct PQ {
-    matrix<T> Q = matrix<T>(N_Q, N_Q);
-    PQ () {};
-    matrix<T> operator() (vector<T> q_rs, int size) {
-      Q.setZero();
-      Q(0, 1) = q_rs(0); // debut
-      Q(0, 2) = q_rs(1); // marriage from virgin
-      Q(1, 2) = q_rs(2); // marriage from debut
-      Q(2, {3, 4, 5}) = q_rs({3, 4, 5}); 
-      Q({3, 4, 5}, 6) = q_rs({6, 6, 6}); 
-      Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
-      Q.diagonal() = T(-1) * Q.rowwise().sum();
-      matrix<T> q_sub = Q.block(0, 0, size, size);
-      return atomic::expm(q_sub);
-    };
+template <class T>
+struct makeQ
+{
+  matrix<T> Q = matrix<T>(N_Q, N_Q);
+  makeQ() {};
+  matrix<T> operator()(vector<T> q_rs, int size)
+  {
+    Q.setZero();
+    Q(0, 1) = q_rs(0); // debut
+    Q(0, 2) = q_rs(1); // marriage from virgin
+    Q(1, 2) = q_rs(2); // marriage from debut
+    Q(2, {3, 4, 5}) = q_rs({3, 4, 5});
+    Q({3, 4, 5}, 6) = q_rs({6, 6, 6});
+    Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
+    Q.diagonal() = T(-1) * Q.rowwise().sum();
+    return Q.block(0, 0, size, size);
+  };
 };
 
 template <class Type>
@@ -83,7 +84,7 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(gp_b);
   dll -= dnorm(gp_b, Type(0), Type(1), true).sum();
 
-  PQ<Type> KM;
+  makeQ<Type> aQ;
   vector<Type> qrs(N_PAR), eta(N_PAR);
 
   auto fill_qrs = [&](Type age, int i) 
@@ -105,21 +106,22 @@ Type objective_function<Type>::operator() ()
   for (int i = 0; i < A.size(); i++) 
   {
     int m_size = fit[i];
-    matrix<Type> vp(1, m_size);
-    vp.setZero();
-    vp(0, A[i]) = 1.;
+    vector<Type> vp(m_size); vp.setZero();
+    vp(A[i]) = 1.;
     for (int j = 0; j < end[i]; j++) {
       fill_qrs(start[i] + Type(j), i);
-      matrix<Type> km = KM(qrs, m_size);
-      vp = vp * km;
+      Eigen::SparseMatrix<Type> Q_j = asSparseMatrix(aQ(qrs, m_size));
+      sparse_matrix_exponential::expm_generator<Type> p_gen(Q_j);
+      vp = p_gen(vp);
     }
     dll -= n[i] * log(vp(Z[i]) + eps);
   }
 
   SIMULATE
   {
-    int n_sim = max(aai);
-    array<Type> PP(N_Q, N_Q, n_sim); PP.setZero();
+    int n_sim = 80;
+    array<Type> PP(N_Q, N_Q, n_sim);
+    PP.setZero();
     for (int i = 0; i < n_sim; i++) {
       for (int z = 0; z < 3; z++)
         eta[z] = itc[z] + logSHASHz(Type(i), mu[z], sigma[z], nu[z], tau[z]);
@@ -128,7 +130,7 @@ Type objective_function<Type>::operator() ()
       eta[2] += b_tx;            // 1 year since x
       eta({3, 4, 5, 6}) += b_tm ; // 1 year since m
       qrs = exp(eta);
-      PP.col(i) = KM(qrs, 7);
+      PP.col(i) = atomic::expm(aQ(qrs, 7));
     }
     REPORT(PP);
   }
