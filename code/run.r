@@ -15,10 +15,13 @@ cc %>%
   mutate(
     A = match(A, state_order) - 1, 
     Z = match(Z, state_order) - 1, 
+    dur = end - start,
     afs = if_else(afs == 0 | is.na(afs), 100, afs), # softmax zero
     afm = if_else(afm == 0 | is.na(afm), 100, afm), # softmax zero
   ) %>%
-  select(sv, A, Z, yob, aai, start, end, afs, afm, n, fit) %>%
+  select(sv, A, Z, yob, aai, start, end, afs, afm, n, fit, dur) %>%
+  # check prep for why?
+  filter(dur >= 1) %>% 
 allot(tdt)
 
 tdt <- tdt %>% mutate(across(c(aai, yob), ~ scale(.x)[,1]))

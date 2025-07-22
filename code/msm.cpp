@@ -51,6 +51,7 @@ Type objective_function<Type>::operator() ()
   DATA_IVECTOR(Z);
   DATA_VECTOR(start);
   DATA_IVECTOR(end);
+  DATA_IVECTOR(dur);
   DATA_VECTOR(n);
   DATA_IVECTOR(fit);
   DATA_VECTOR(afs);
@@ -108,7 +109,7 @@ Type objective_function<Type>::operator() ()
     int m_size = fit[i];
     vector<Type> vp(m_size); vp.setZero();
     vp(A[i]) = 1.;
-    for (int j = 0; j < end[i]; j++) {
+    for (int j = 0; j < dur[i]; j++) {
       fill_qrs(start[i] + Type(j), i);
       Eigen::SparseMatrix<Type> Q_j = asSparseMatrix(aQ(qrs, m_size));
       sparse_matrix_exponential::expm_generator<Type> p_gen(Q_j);
