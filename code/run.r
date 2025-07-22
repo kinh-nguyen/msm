@@ -3,9 +3,15 @@ library("TMB")
 
 state_order <-c("V", "X", "M", "S", "D", "W", "R")
 
-vroom::vroom(here("data/cc.csv.bz2"), show_col_types = F) %>% 
-  filter(cc == "CG", sex == 'f') %>% 
-  filter(start > 0) %>% 
+cc <- vroom::vroom(here("data/cc.csv.bz2"), show_col_types = F)
+
+CC = 'ST'  
+SEX = 'f'  
+
+cc %>%
+  filter(cc == CC) %>% 
+  filter(sex == SEX) %>% 
+  mutate(start = if_else(start == 0, 1, start)) %>% 
   mutate(
     A = match(A, state_order) - 1, 
     Z = match(Z, state_order) - 1, 
@@ -15,54 +21,37 @@ vroom::vroom(here("data/cc.csv.bz2"), show_col_types = F) %>%
   select(sv, A, Z, yob, aai, start, end, afs, afm, n, fit) %>%
 allot(tdt)
 
-# predicting data by age for average duration of tx and tm
-tdt %>%
-  mutate(
-    tx = log(1 + exp(aai - afs)),
-    tm = log(1 + exp(aai - afm))
-  ) %>% 
-  filter(A == 1 | A == 2) %>%
-  group_by(start) %>%
-  summarise(
-    tx = mean(aai - afs),
-    tm = mean(aai - afm),
-    .groups = "drop"
-  ) %>% 
-  bind_rows(
-    anti_join(tibble(
-      start = 1:(max(tdt$end) + 1),
-      tx = 0, tm = 0,
-    ), ., by = "start")
-  ) %>%
-  arrange(start) %>%
-allot(sim_data)
-
 tdt <- tdt %>% mutate(across(c(aai, yob), ~ scale(.x)[,1]))
 
 N_PAR = 7
 data <- list()
 
-data$sim_data = as.matrix(sim_data)
-
 data <- modifyList(data, as.list(tdt))
 
 init <- list(
-  mu = c(2.6, 2.8, 2.9, 2.7, 2.7, 2.7, 2.7),
-  log_sigma = c(-2, -2, .1, -2, -2, -2, -2),
-  log_nu = c(.5, -2, -1, -2, -2, -2, -2),
-  log_tau = c(-2, -.5, .8, -2, -2, -2, -2),
-  tau_aai = c(-.04, -.05, -.2, -.05, -.05, -.05, -.05),
+  # VX VM XM
+  mu = c(2.6, 2.8, 2.9),
+  log_sigma = c(-2, -2, .1),
+  log_nu = c(.5, -2, -1),
+  log_tau = c(-2, -.5, .8),
+  tau_aai = c(0, 0, 0),
   b_tx = c(-0.03),
+  # MS MD MW M...R
   b_tm = c(-0.03),
-  itc = c(3, -.5, 2, 3, 3, 3, 3)
+  itc = c(3, -.5, 2, 3, 3, 3, 3),
+  gp_b = c(0, 0, 0, 0)
 )
-TMB::compile("code/msm.cpp", flags = "-Wno-ignored-attributes")
+
+TMB::compile("code/msm.cpp", flags = "-O3 -Wno-ignored-attributes", framework = 'TMBad')
 base::dyn.load(TMB::dynlib("code/msm"))
-invisible(TMB::config(tape.parallel = 0, DLL = "msm"))
+invisible(TMB::config(tape.parallel = 1, DLL = "msm"))
 TMB::openmp(20)
 
 obj <- TMB::MakeADFun(
   data, init,
+  map = list(
+    tau_aai = factor(rep(NA, 3))
+  ),
   DLL = "msm", silent = FALSE 
 )
 
