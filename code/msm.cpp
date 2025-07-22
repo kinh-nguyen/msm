@@ -104,7 +104,10 @@ Type objective_function<Type>::operator() ()
     qrs = exp(eta);
   };
 
-  for (int i = 0; i < A.size(); i++) 
+  sparse_matrix_exponential::config<Type> cfg_me;
+  cfg_me.trace = false;
+
+  for (int i = 0; i < A.size(); i++)
   {
     int m_size = fit[i];
     vector<Type> vp(m_size); vp.setZero();
@@ -112,7 +115,7 @@ Type objective_function<Type>::operator() ()
     for (int j = 0; j < dur[i]; j++) {
       fill_qrs(start[i] + Type(j), i);
       Eigen::SparseMatrix<Type> Q_j = asSparseMatrix(aQ(qrs, m_size));
-      sparse_matrix_exponential::expm_generator<Type> p_gen(Q_j);
+      sparse_matrix_exponential::expm_generator<Type> p_gen(Q_j, cfg_me);
       vp = p_gen(vp);
     }
     dll -= n[i] * log(vp(Z[i]) + eps);
