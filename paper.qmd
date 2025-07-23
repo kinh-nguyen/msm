@@ -56,47 +56,7 @@ format:
     include-before-body:
       text: |
         \linenumbers
-    include-in-header:
-      text: |
-        \usepackage{amsmath}
-        \setlength{\parindent}{0pt}
-        %\usepackage[affil-it]{authblk}
-        %\renewcommand{\Affilfont}{\footnotesize}
-        \usepackage{xcolor}
-        \usepackage{hyperref}
-        \usepackage[capitalise,noabbrev]{cleveref}
-        \usepackage[title]{appendix}
-        \usepackage[inline]{enumitem}
-        %\usepackage{paralist}
-        \usepackage{blkarray} % named matrixed
-        \usepackage{lineno}
-        \usepackage{etoolbox}
-        \AtBeginEnvironment{abstract}{\setlength{\parindent}{0pt}}
-        %\usepackage[hpos=0.15\paperwidth,vpos=0.1\paperheight,colormodel=RGB,color={[RGB]{253, 246, 227}}]{draftwatermark}
-        %\SetWatermarkText{draft}
-        %\SetWatermarkScale{1}
-        \usepackage{ifthen}
-        \newcount\hourofday
-        \hourofday=\time      % This is the number of minutes since midnight
-        \divide\hourofday by 60 % Now \hourofday holds the integer for the current hour
-        \newboolean{isnight}
-        \setboolean{isnight}{false} % Default value
-        \ifthenelse{\hourofday > 17 \or \hourofday < 6}{ % Check if after 5 PM or before 6 AM
-        \setboolean{isnight}{true}
-        }{}
-        \definecolor{pageDark}{rgb}{0.992,0.9647,0.8902}
-        \definecolor{textDark}{rgb}{0.396,0.482,0.514}
-        \definecolor{pageLight}{rgb}{0.0,0.1686,0.2117}
-        \definecolor{textLight}{rgb}{0.5137,0.5804,0.5882}
-        \definecolor{page1dark}{rgb}{0.1373,0.1529,0.1804}
-        \definecolor{text1dark}{rgb}{0.6706,0.6980,0.7490}
-        \pagecolor{pageDark}\color{textDark} 
-        %\pagecolor{pageLight}\color{textLight} 
-        \AtBeginDocument{\hypersetup{colorlinks=true,allcolors=Bittersweet}}
-        \ifisnight
-            \pagecolor{page1dark}\color{text1dark} 
-            \AtBeginDocument{\hypersetup{colorlinks=true,allcolors=pink}}
-        \fi
+    include-in-header: /Users/knguyen/qmdheader.tex
     # linestretch: 1
     pagestyle: headings
     fontsize: 11pt
