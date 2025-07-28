@@ -23,8 +23,8 @@ Pull with `rdhs`
 ```{r adam, eval = F}
 library(rdhs)
 set_rdhs_config(
-    email = "ath19@ic.ac.uk",
-    project = "Statistics and Machine Learning for HIV", 
+    email = "k.nguyen@imperial.ac.uk",
+    project = "Global estimates of key populations adjusted for sexual debut data", 
     password_prompt = T
 )
 
