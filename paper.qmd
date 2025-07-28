@@ -209,17 +209,6 @@ informed by the number of individuals with more than once union and currently
 married without knowing from which state the individual had remarried. Thus, we
 constrained $\lambda_{47} = \lambda_{57} = \lambda_{67}$.
 
-The general semi-Markove transition intensities between state $i$ and $j$ over
-ages $t = 1,2,...,$ is
-\begin{flalign*}
-\lambda_{1j}(t) &= h_{1j}(t | \Theta_{1j}), j = 2, 3 \\
-\lambda_{23}(t) &= h_{23}(t | \Theta_{23}, t_x) \\
-\lambda_{3j}(t) &= h_{3j}(t | \Theta_{3j}, t_m), j = 3, 4, 5 \\
-\lambda_{j7}(t) &= h_{j7}(t | \Theta_{r}, t_m) 
-\end{flalign*}
-where $h(t)$ is a parametric hazard function, $t_x, t_m$ are time since sexual
-debut and time since first marriage, respectively.
-
 For each individual's profile, a corresponding submatrice of Q will be used to
 limit the transitions to only permissible paths. For observed episodes VV, VX,
 VM, XX, XM, the submatrix is $Q_{sub} = Q.block(1,1,3,3)$, i.e, a block starting
@@ -245,17 +234,25 @@ $\gamma =  \tau \log(z + (1 + z^2)^{-.5}) - \nu$, $r = \sinh(\gamma)$,
 $c = \cosh(\gamma)$,
 and $\phi(r)$ is the standard normal probability distribution function. The
 parameter $\mu$ is the mean, with variance $\sigma > 0$, kurtosis $\tau > 0$,
-and skewness $\nu > 0$, i.e, model righ-skewed empirical data. The hazard function is given by $h(x) = f(x)/(1 - \Phi(r))$.
-
-<!-- For the XM transition, we compare effect of time since sexual debut between 
-a proportional hazard and accelerate time failure specification, i.e., $\lambda_{23} = h_{23} exp(\beta_{tx} \times t_x)$ and . -->
+and skewness $\nu > 0$, i.e, model righ-skewed empirical data. The hazard
+function is given by $h(x) = f(x)/(1 - \Phi(r))$.
+The transition intensities between state $i$ and $j$ over ages $t = 1,2,...,$ is
+$$
+\lambda_{1j}(t) = h_{1j}(t | \Theta_{1j}), j = 2, 3
+$$
+For the XM transition, we model the effect of time since sexual debut, i.e., 
+$$
+\lambda_{23} = h_{23} exp(\beta_{tx} \times t_x)
+$$
+is a parametric hazard function, $t_x, t_m$ are time since sexual
+debut and time since first marriage, respectively.
 
 For dissolution transitions, the data is sparse and interval censored.
 Estimating the empirical risk with the actuarial (life‑table) estimator
 [@turnbull1976] suggested a small and log-linear hazard of over age. Thus we
 reduced the model and fitted a Gompertz hazard. The rates are further
-reparameterized to improved model identifiability.
-Since the data are most informative regarding the total dissolution rates, 
+reparameterized to improved model identifiability. Since the data are most
+informative regarding the total dissolution rates, 
 we model $\lambda_d = -q_{33}$ directly as
 $$
 \lambda_{d} = \exp(\beta_d + \theta_d t_m + \phi_d \text{afm})
@@ -287,7 +284,6 @@ at interview, i.e., $$\tau_{ij,sk} = \exp (\zeta_{ij,s,k} + \zeta_{ij,s,k} \cdot
 For each sex ($s$), and across countries ($k$), the four parameters are assumed
 to vary around a global mean, e.g., $\mu_{ij,s,k} = \mu_{ij,s} + c_{ij,s,k}$,
 $c_{ij, s,k}\sim N(0, \kappa_{ij, s})$. 
-
 
 ## Model likelihood
 
