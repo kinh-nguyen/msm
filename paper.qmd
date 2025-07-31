@@ -142,7 +142,7 @@ distribution's variance. Details are as follows.
 
 ## Household survey data
 
-\noindent Data on respondents's country, age, sex, age at first sex (AFS), age
+Data on respondents's country, age, sex, age at first sex (AFS), age
 at first marriage (AFM), and current marital status were obtained from
 Demographic and Health Surveys (DHS) in 37 countries. Only nationally
 representative surveys with individual records available for analysis were used.
@@ -161,14 +161,14 @@ birth to 1-year interval, resulting $>5$ million rows data.
 
 ## States transition
 
-We defined seven states of transition from virgin from birth ($V$) to currently
-sexually debuted and not married ($X$), married or in a union ($M$), three
-states of marriage dissolution including separated ($S$), divorced ($D$),
-widowed ($W$), and remarried or in a union again ($R$). A remarried event is
+We defined six states of transition from virgin from birth ($V$) to currently
+sexually debuted and not married ($X$), married or in a union ($M$), two
+states of marriage dissolution including separated or divorced ($D$), widowed
+($W$), and remarried or in a union again ($R$). A remarried event is
 defined if the respondent reported that there had been more than one union and
-currently in states M, D, S, W. Transitions are unidirectional for initial life
+currently in states M, D, W. Transitions are unidirectional for initial life
 stages and allow for cycles in later marital statuses: V $\to$ {X, M}, X $\to$
-M, M $\to$ {S, D, W} $\to$ R, R $\to$ {S, D, W}. From the AFM, the events D, S,
+M, M $\to$ {D, W} $\to$ R, R $\to$ {D, W}. From the AFM, the events D, 
 W, R are interval censored, and there can be numerous traverse the paths in
 those with more than once unions. We assumed if a marriage dissolute within a
 year after married, there was no intermediate states in between, except the
@@ -180,21 +180,16 @@ state is not included in the model.
 The time-varying transition rates between the states is described with
 the generator intensity matrix $Q(t, \mathbf{X})$, 
 \begin{equation}\label{mat:Q}
-\scriptsize
-Q = 
-\begin{blockarray}{cccccccc}
-V & X & M & S & D & W & R \\
-\begin{block}{(ccccccc)c}
-  q_{11} & \lambda_{12} & \lambda_{13} & 0 & 0 & 0 & 0 & V \\
-  0 & q_{22} & \lambda_{23} & 0 & 0 & 0 & 0 & X \\
-  0 & 0 & q_{33} & \lambda_{34} & \lambda_{35} & \lambda_{36} & 0 & M \\
-  0 & 0 & 0 & q_{44} & 0 & 0 & \lambda_{47} & S \\
-  0 & 0 & 0 & 0 & q_{55} & 0 & \lambda_{57} & D \\
-  0 & 0 & 0 & 0 & 0 & q_{66} & \lambda_{67} & W \\
-  0 & 0 & 0 & \lambda_{74} & \lambda_{75} & \lambda_{76} & q_{77} & R \\
-\end{block}
-\end{blockarray}
-\end{equation} 
+Q =
+\begin{bmatrix}
+  q_{11} & \lambda_{12} & \lambda_{13} & 0 & 0 & 0 \\
+  0 & q_{22} & \lambda_{23} & 0 & 0 & 0 \\
+  0 & 0 & q_{33} & \lambda_{34} & \lambda_{35} & 0 \\
+  0 & 0 & 0 & q_{44} & 0 & \lambda_{46} \\
+  0 & 0 & 0 & 0 & q_{55} & \lambda_{56} \\
+  0 & 0 & 0 & \lambda_{64} & \lambda_{65} & \lambda_{66}
+\end{bmatrix}
+\end{equation}
 The off-diagonal elements $q_{ij}(t, \mathbf{X}) = \lambda_{ij}(t, \mathbf{X})$, 
 $i \neq j$, is the transition intensity from state $i$ to state
 $j$. The diagonal elements $q_{ii}(t, \mathbf{X}) = - \sum_{j \neq i}
@@ -202,26 +197,26 @@ $j$. The diagonal elements $q_{ii}(t, \mathbf{X}) = - \sum_{j \neq i}
 The remarried state $R$ describes individuals who reported to having more than
 once marriages/unions. Because the marriage dissolution events were not
 observed but interval censored, we constrained the rates of dissolution to be
-the same for ($M$) and ($R$), i.e., $q_{33} = q_{77},\ \lambda_{34} =
-\lambda_{74},\ \lambda_{35} = \lambda_{75},\ \lambda_{36} = \lambda_{76}$. Also,
-the remarried rates from the marriage dissolution states ($S, D, W$) are only
+the same for ($M$) and ($R$), i.e., $q_{33} = q_{66},\ \lambda_{34} =
+\lambda_{64},\ \lambda_{35} = \lambda_{65}$. Also,
+the remarried rates from the marriage dissolution states ($D, W$) are only
 informed by the number of individuals with more than once union and currently
 married without knowing from which state the individual had remarried. Thus, we
-constrained $\lambda_{47} = \lambda_{57} = \lambda_{67}$.
+constrained $\lambda_{46} = \lambda_{56}$.
 
 For each individual's profile, a corresponding submatrice of Q will be used to
 limit the transitions to only permissible paths. For observed episodes VV, VX,
 VM, XX, XM, the submatrix is $Q_{sub} = Q.block(1,1,3,3)$, i.e, a block starting
 at row 1, column 1 and spans 3 elements each dimension. For episodes with states
-MM, MS, MD, MW and have never remarried, the submatrix is $Q_{sub} =
-Q.block(1,1,6,6)$. For those that have already remarried, which started from M
-and make all possible paths through S, W, D, R, the full Q matrix is used.
+MM, MD, MW and have never remarried, the submatrix is $Q_{sub} =
+Q.block(1,1,5,5)$. For those that have already remarried, which started from M
+and make all possible paths through W, D, R, the full Q matrix is used.
 
 ## Hazard functions
 
 Empirical risk estimates of the three transition VX, VM, and XM over ages
 exhibited diversed dynamics in the transition probability, especially a steep
-decreasing in risk after an initial peak, We opted for the flexible sinh-arcsinh
+decreasing in risk after an initial peak, We opted for the flexible Sinh-arcsinh
 distribution [@jones2009] and reparameterized to have a positive support for
 modelling time (age). The density function reads as
 $$
@@ -240,50 +235,36 @@ The transition intensities between state $i$ and $j$ over ages $t = 1,2,...,$ is
 $$
 \lambda_{1j}(t) = h_{1j}(t | \Theta_{1j}), j = 2, 3
 $$
-For the XM transition, we model the effect of time since sexual debut, i.e., 
+As older paricipants have a wider permited age range to report (i.e., widen the
+right tail of the distribution), we consider the kurtosis/variance as a function
+of age at interview, i.e., 
 $$
-\lambda_{23} = h_{23} exp(\beta_{tx} \times t_x)
+\tau_{ij,sk} = \exp (\zeta_{ij,s,k} + \zeta_{ij,s,k} \cdot\text{aai})
 $$
-is a parametric hazard function, $t_x, t_m$ are time since sexual
-debut and time since first marriage, respectively.
+where *aai* is the standardized age at interview. We compared with EPLD
+[@vehtariPracticalBayesianModel2017] criteria.
 
-For dissolution transitions, the data is sparse and interval censored.
+For the XM transition, we model the proportional effect of time since sexual
+debut, i.e., 
+$$
+\lambda_{23} = h_{23} \exp(\beta_{tx} t_x)
+$$
+where $t_x$ are time since sexual debut.
+
+For dissolution transitions, the data is sparse and interval-censored.
 Estimating the empirical risk with the actuarial (life‑table) estimator
 [@turnbull1976] suggested a small and log-linear hazard of over age. Thus we
-reduced the model and fitted a Gompertz hazard. The rates are further
-reparameterized to improved model identifiability. Since the data are most
-informative regarding the total dissolution rates, 
-we model $\lambda_d = -q_{33}$ directly as
+reduced the model and fitted a Gompertz hazard as
 $$
-\lambda_{d} = \exp(\beta_d + \theta_d t_m + \phi_d \text{afm})
+\lambda_{3j} = \exp(\beta_{3j} + \theta_{3j} t_m + \phi_{3j} \text{afm}).
 $$
-and define a multinomial log‐odds relative to widowhood relative to widowhood
-(W) as:
-\begin{align*}
-\log(L_S) &= \log(\pi_S/\pi_W) = \alpha_S + \delta_S t_m + \psi_S \text{afm} \\
-\log(L_D) &= \log(\pi_D/\pi_W) = \alpha_D + \delta_D t_m + \psi_D \text{afm}.
-\end{align*}
-Let $C = 1 + \pi_S/\pi_W + \pi_D/\pi_W$, so that the three transition
-probabilities sum to one: the probability of separation is $\pi_S = L_S / C$,
-the probability of divorce is $\pi_D = L_D / C$, and the baseline probability of
-widowhood is $\pi_W = 1 / C$. Then 
-$\lambda_{34} = \lambda_{d} \pi_S$, 
-$\lambda_{35} = \lambda_{d} \pi_D$, and
-$\lambda_{35} = \lambda_{d} \pi_W$.
-The remarriage rate is modeled as a function of age and age at
-first marriage.
-$$
-\lambda_{j7} = \exp(\beta_{j7} + \theta_{j7} \text{age} + \phi_{j7} \text{afm})
-$$
-
-As older paricipants have a wider permited age range to report (i.e., widen the
-right tail of the distribution), the kurtosis is modelled as a function of age
-at interview, i.e., $$\tau_{ij,sk} = \exp (\zeta_{ij,s,k} + \zeta_{ij,s,k} \cdot
-\text{aai})$$ where *aai* is the standardized age at interview.
+which is equivalent to a proportional hazard effect of the during since
+marriage.
 
 For each sex ($s$), and across countries ($k$), the four parameters are assumed
 to vary around a global mean, e.g., $\mu_{ij,s,k} = \mu_{ij,s} + c_{ij,s,k}$,
 $c_{ij, s,k}\sim N(0, \kappa_{ij, s})$. 
+
 
 ## Model likelihood
 
@@ -297,7 +278,9 @@ $$
 \dfrac{d}{dt} P(t, t + 1, \mathbf{X}, \Theta) \approx \text{expm}(Q(t, X, \Theta)),
 $$
 where `expm` denotes the matrix exponential [@vandenhout2020]. Computing matrix
-exponential is an expensive calculation [@molerNineteenDubiousWays2003]. Here, we used the uniformization method [@sherlock2021], applying to each of the submatrices described earlier.
+exponential is an expensive calculation [@molerNineteenDubiousWays2003]. Here,
+we used the uniformization method [@sherlock2021], applying to each of the
+submatrices described earlier.
 
 The model's parameters was estimated using empirical Bayes approach. The
 standard normal prior were chosen for the unrestricted parameters, and the

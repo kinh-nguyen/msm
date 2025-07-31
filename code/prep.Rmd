@@ -143,7 +143,7 @@ readRDS(here('data/cleaned.rds')) %>%
     ms = if_else(ms %in% c("married", "union") & u != "once", "R", ms),
     ms = if_else(afs == 0 & afm == 0, "V", ms),
     ms = if_else(afs != 0 & afm == 0, "X", ms),
-    ms = if_else(ms == "separated", "S", ms),
+    ms = if_else(ms == "separated", "D", ms),
     ms = if_else(ms == "divorced", "D", ms),
     ms = if_else(ms == "widowed", "W", ms),
     fit = case_when(
@@ -160,7 +160,7 @@ allot(tmp)
 
 # Too big the dataset, do sequential insteads
 cc <- unique(tmp$cc)
-dir.create(here("data/cc"), F)
+dir.create(here("data/cc6"), F)
 
 parallel::mclapply(cc, function(i) {
 cat(i, '\n')
@@ -182,7 +182,6 @@ tmp %>%
     }
     if (!.y$neverwed) {
       .x$MM = if_else(.x$ms == 'M', .x$afm + 1, NA_real_)
-      .x$MS = if_else(.x$ms == 'S', .x$afm + 1, NA_real_)
       .x$MD = if_else(.x$ms == 'D', .x$afm + 1, NA_real_)
       .x$MW = if_else(.x$ms == 'W', .x$afm + 1, NA_real_)
       .x$MR = if_else(.x$ms == 'R', .x$afm + 1, NA_real_)
@@ -191,7 +190,7 @@ tmp %>%
   }) %>% 
   ungroup() %>% 
   pivot_longer(
-    c(VV, VX, VM, XX, XM, MM, MS, MD, MW, MR), 
+    c(VV, VX, VM, XX, XM, MM, MD, MW, MR), 
     names_to = 'trans', values_to = 'start'
   ) %>% 
   drop_na(start) %>% 
@@ -207,13 +206,13 @@ tmp %>%
   filter(!(start == end & A != 0)) %>% 
   group_by(cc, sv, sex, fit, yob, aai, afs, afm, start, end, A, Z, d) %>% 
   summarise(n = sum(kish), .groups = 'drop') %>%
-  write.csv(here("data/cc", paste0(i, ".csv")), row.names = FALSE)
+  write.csv(here("data/cc6", paste0(i, ".csv")), row.names = FALSE)
 },
 mc.cores = 6
 ) %>% invisible()
 
-new_d <- vroom::vroom(list.files(here('data/cc'), full.names = T), show_col_types = FALSE)
-bz2_file <- bzfile(here("data", "cc.csv.bz2"))
+new_d <- vroom::vroom(list.files(here('data/cc6'), full.names = T), show_col_types = FALSE)
+bz2_file <- bzfile(here("data", "cc6.csv.bz2"))
 write.csv(new_d, bz2_file, row.names = FALSE)
 
 # plot match data

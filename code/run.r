@@ -1,9 +1,9 @@
 library(ktools)
 library("TMB")
 
-state_order <-c("V", "X", "M", "S", "D", "W", "R")
+state_order <-c("V", "X", "M", "D", "W", "R")
 
-cc <- vroom::vroom(here("data/cc.csv.bz2"), show_col_types = F)
+cc <- vroom::vroom(here("data/cc6.csv.bz2"), show_col_types = F)
 
 CC = 'ST'  
 SEX = 'f'  
@@ -18,6 +18,7 @@ cc %>%
     dur = end - start,
     afs = if_else(afs == 0 | is.na(afs), 100, afs), # softmax zero
     afm = if_else(afm == 0 | is.na(afm), 100, afm), # softmax zero
+    fit = if_else(fit != 3, fit - 1, fit)
   ) %>%
   select(sv, A, Z, yob, aai, start, end, afs, afm, n, fit, dur) %>%
   # check prep for why?
@@ -26,7 +27,7 @@ allot(tdt)
 
 tdt <- tdt %>% mutate(across(c(aai, yob), ~ scale(.x)[,1]))
 
-N_PAR = 7
+N_PAR = 6
 data <- list()
 
 data <- modifyList(data, as.list(tdt))
@@ -39,10 +40,10 @@ init <- list(
   log_tau = c(-2, -.5, .8),
   tau_aai = c(0, 0, 0),
   b_tx = c(-0.03),
-  # MS MD MW M...R
+  # MD MW M...R
   b_tm = c(-0.03),
-  itc = c(3, -.5, 2, 3, 3, 3, 3),
-  gp_b = c(0, 0, 0, 0)
+  itc = rep(3, N_PAR),
+  gp_b = c(0, 0, 0)
 )
 
 TMB::compile("code/msm.cpp", flags = "-O3 -Wno-ignored-attributes", framework = 'TMBad')
@@ -81,7 +82,6 @@ pe = tibble(
   XX = P_yearly[2,2,],
   XM = P_yearly[2,3,],
   MM = P_yearly[3,3,],
-  MS = P_yearly[3,4,],
   MD = P_yearly[3,5,],
   MW = P_yearly[3,6,],
 ) %>% 

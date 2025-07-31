@@ -1,29 +1,37 @@
 #include <TMB.hpp>
 #include "ktools.hpp"
 
-#define N_PAR 7
-#define N_Q 7
+#define N_PAR 6
+#define N_Q 6
 #define eps CppAD::numeric_limits<double>::epsilon()
 
 using Eigen::seqN;
+using Eigen::Triplet;
 
-template <class T>
-struct makeQ
-{
-  matrix<T> Q = matrix<T>(N_Q, N_Q);
-  makeQ() {};
-  matrix<T> operator()(vector<T> q_rs, int size)
-  {
-    Q.setZero();
-    Q(0, 1) = q_rs(0); // debut
-    Q(0, 2) = q_rs(1); // marriage from virgin
-    Q(1, 2) = q_rs(2); // marriage from debut
-    Q(2, {3, 4, 5}) = q_rs({3, 4, 5});
-    Q({3, 4, 5}, 6) = q_rs({6, 6, 6});
-    Q(6, {3, 4, 5}) = q_rs({3, 4, 5});
-    Q.diagonal() = T(-1) * Q.rowwise().sum();
-    return Q.block(0, 0, size, size);
-  };
+template <class Type>
+struct makeQ {
+  Eigen::SparseMatrix<Type> operator()(const vector<Type> &q_rs, int size) {
+    Eigen::SparseMatrix<Type> Q(size, size);
+    vector<Type> row_sums = vector<Type>::Zero(size);
+    auto add = [&](int r, int c, Type val) {
+      if (r < size && c < size) {
+        Q.coeffRef(r, c) += val;
+        row_sums(r) += val;
+      }
+    };
+    add(0, 1, q_rs(0));
+    add(0, 2, q_rs(1));
+    add(1, 2, q_rs(2));
+    add(2, 3, q_rs(3));
+    add(2, 4, q_rs(4));
+    add(3, 5, q_rs(5));
+    add(4, 5, q_rs(5));
+    add(5, 3, q_rs(3));
+    add(5, 4, q_rs(4));
+    for (int i = 0; i < size; ++i) Q.coeffRef(i, i) = -row_sums(i);
+    Q.makeCompressed();
+    return Q;
+  }
 };
 
 template <class Type>
@@ -85,25 +93,25 @@ Type objective_function<Type>::operator() ()
   PARAMETER_VECTOR(gp_b);
   dll -= dnorm(gp_b, Type(0), Type(1), true).sum();
 
-  makeQ<Type> aQ;
   vector<Type> qrs(N_PAR), eta(N_PAR);
-
+  
   auto fill_qrs = [&](Type age, int i) 
   {
     for (int z = 0; z < 3; z++) {
       Type tau_tmp = exp(log_tau[z] + tau_aai[z] * aai[i]);
       eta[z] = itc[z] + logSHASHz(age, mu[z], sigma[z], nu[z], tau_tmp);
     }
-    for (int z = 3; z < 7; z++) {
+    for (int z = 3; z < N_PAR; z++) {
       eta[z] = itc[z] + gp_b[z - 3] * age;
     }
     Type tx = log(1 + exp(age - afs[i]));
     Type tm = log(1 + exp(age - afm[i]));
     eta[2] += b_tx * tx;
-    eta({3, 4, 5, 6}) += b_tm * tm;
+    eta({3, 4, 5}) += b_tm * tm;
     qrs = exp(eta);
   };
-
+  
+  makeQ<Type> aQ;
   sparse_matrix_exponential::config<Type> cfg_me;
   cfg_me.trace = false;
 
@@ -114,7 +122,7 @@ Type objective_function<Type>::operator() ()
     vp(A[i]) = 1.;
     for (int j = 0; j < dur[i]; j++) {
       fill_qrs(start[i] + Type(j), i);
-      Eigen::SparseMatrix<Type> Q_j = asSparseMatrix(aQ(qrs, m_size));
+      Eigen::SparseMatrix<Type> Q_j = aQ(qrs, m_size);
       sparse_matrix_exponential::expm_generator<Type> p_gen(Q_j, cfg_me);
       vp = p_gen(vp);
     }
@@ -129,12 +137,13 @@ Type objective_function<Type>::operator() ()
     for (int i = 0; i < n_sim; i++) {
       for (int z = 0; z < 3; z++)
         eta[z] = itc[z] + logSHASHz(Type(i), mu[z], sigma[z], nu[z], tau[z]);
-      for (int z = 3; z < 7; z++)
+      for (int z = 3; z < N_PAR; z++)
         eta[z] = itc[z] + gp_b[z - 3] * Type(i);
-      eta[2] += b_tx;            // 1 year since x
-      eta({3, 4, 5, 6}) += b_tm ; // 1 year since m
+      eta[2] += b_tx;          // 1 year since x
+      eta({3, 4, 5}) += b_tm ; // 1 year since m
       qrs = exp(eta);
-      PP.col(i) = atomic::expm(aQ(qrs, 7));
+      matrix<Type> Qd = aQ(qrs, 6).toDense();
+      PP.col(i) = atomic::expm(Qd);
     }
     REPORT(PP);
   }
