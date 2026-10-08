@@ -1,5 +1,4 @@
 #include <TMB.hpp>
-#include "ktools.hpp"
 
 // Eight-state model (see DECISIONS.md)
 //   0 V   never had sex, never married

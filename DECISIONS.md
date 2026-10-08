@@ -36,13 +36,13 @@ code/prep.Rmd rewritten for the eight-state model (2026-10-08, untested, backup 
 
 code/msm.cpp rewritten for the eight-state model (2026-10-08, not compiled). Generator with explicit ties, tau_aai/sigma_aai and the aai data removed, cohort shift b_coh on the SHASH location of the three pre-marriage rates, b_coh_post on the post-marriage intercepts, post-marriage age and duration centred at age_c and tm_c, intercept prior N(itc_mu, itc_sd) passed as data, SIMULATE reports PP (8×8 annual transition matrices) and QQ (rates by age) for a reference person afs_ref, afm_ref, coh_ref. b_tm has three entries, so run.r chooses shared or separate by the map. Centring alone does not make the old N(0,1) intercept prior harmless, because log rates at age 25 are about −4 (divorce), −6 (widowhood) and −2 (remarriage); hence the prior is now set in run.r.
 
-Folder reorganised on 2026-10-08. code/ holds the current pipeline only (prep.Rmd, run.r, run.sh, msm.cpp, ktools.hpp). paper/ holds paper.qmd and its build files. notes/ holds exploratory documents. archive/ holds superseded code and old renders, with empty folders in archive/empty. code/fit/testMW.rds became fit/testMW_code.rds. notes/FPapprox.qmd now compiles notes/dfp2.cpp. archive/code/model_code.cpp and msm_mw_code.ipynb are identical duplicates and can be deleted.
+Folder reorganised on 2026-10-08. code/ holds the current pipeline only (prep.Rmd, run.r, run.sh, msm.cpp). The fitting code on the cluster (msm.cpp, run.r, compile.r, check_fits.r) no longer depends on ktools; ktools.hpp moved to archive/code, where the archived models include it. paper/ holds paper.qmd and its build files. notes/ holds exploratory documents. archive/ holds superseded code and old renders, with empty folders in archive/empty. code/fit/testMW.rds became fit/testMW_code.rds. notes/FPapprox.qmd now compiles notes/dfp2.cpp. archive/code/model_code.cpp and msm_mw_code.ipynb are identical duplicates and can be deleted.
 
 code/run.r rewritten for the eight-state model (2026-10-08, not run). Reads data/cc8.csv.bz2, sets fit per episode (3 before marriage, 5 for episodes ending in M, D1, W1, 8 for R, D2, W2), cohort coh = (yob − 1975)/10, passes age_c = 25, tm_c = 10, itc prior N(−4, 3) and the reference woman (afs 16, afm 18, cohort 1975), estimates b_tx, keeps b_tm shared (separate as a commented alternative), maps b_coh_post off when the country has one survey, saves fit, sdreport and simulation to fit/fit8_<CC><sex>.rds and the comparison plot to fig/fit8_<CC><sex>.pdf. The plotting indices for M→D and M→W were also corrected (the old code took P[3,5], which was W, as MD).
 
 Cluster scripts (2026-10-08). code/run.r takes country and sex as arguments (Rscript code/run.r CC sex) and compiles only when msm.so is missing or older than msm.cpp. code/compile.sh compiles once on a compute node, code/run.sh is a Slurm array with one task per line of code/tasks_f.txt or code/tasks_m.txt (37 countries each). On the Mac, code/hpc_submit.sh syncs code and data to the cluster and submits the compile job and the dependent array; code/hpc_fetch.sh copies fit/fit8_*, fig/fit8_* and the logs back. Defaults HPC_HOST=fuchs and HPC_DIR=/panfs/vdura1/fuchs/fias/knguyen/MultistageSurv, overridable by environment variables.
 
-HPC_INSTRUCTIONS.md (2026-10-08) instructs a Claude session connected to the cluster to check the setup, compile, fit São Tomé as a test, report, and only after approval run all 37 countries for women, with code/check_fits.r summarising the fits in fit/fit8_summary.csv.
+HPC_INSTRUCTIONS.md (2026-10-08) instructs the cluster to check the setup, compile, fit São Tomé as a test, report, and only after approval run all 37 countries for women, with code/check_fits.r summarising the fits in fit/fit8_summary.csv.
 
 prep.Rmd adam chunk (2026-10-08): the rdhs query had no regional filter and surveyYearStart = 2015, so it pulled every country (India failed to read). It now takes the 100 surveys listed in code/surveys.txt, the surveys present in the existing data/cleaned.rds (99 for women, ZM2002 for men only).
 
@@ -52,7 +52,10 @@ README.md rewritten for the current project (2026-10-08); the 2022 README is arc
 
 ## Still to do
 
-Finish rerunning prep.Rmd (it reached the design effects on 2026-10-08) and check which surveys came from Stata files, count(tmp, cell, u), data/deff.csv and new_d %>% count(A, Z). Compile and fit one country, then compare with the old fit by country. Decide shared or separate b_tm. Then RW2 for the cohort term if needed, v538, men, pooling across countries where needed, and the duration-averaged hazard tables by age and cohort for the HIV model.
+- [x] Finish rerunning prep.Rmd (it reached the design effects on 2026-10-08) and check which surveys came from Stata files, count(tmp, cell, u), data/deff.csv and new_d %>% count(A, Z). 
+- [ ] Compile and fit one country, then compare with the old fit by country. Decide shared or separate b_tm. 
+- [ ] Then RW2 for the cohort term if needed, v538, men, pooling across countries where needed
+- [ ] the duration-averaged hazard tables by age and cohort for the HIV model.
 
 ## Notes for the Methods section
 

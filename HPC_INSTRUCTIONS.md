@@ -14,13 +14,13 @@ Do not edit `code/msm.cpp`, `code/run.r`, `code/prep.Rmd` or anything in `data/`
 
 The code comes from the git repository `github.com/kinh-nguyen/msm`. If `$HPC_DIR` is a clone of it, run `git pull` there; if it does not exist, clone the repository into it. The data are not in git: the user copies `data/cc8.csv.bz2` (and, if available, `data/pd.csv.bz2` and `data/mjs.csv`) from their computer. Create an empty file `.here` in `$HPC_DIR` so that `here()` finds the project root.
 
-Confirm that `$HPC_DIR` contains `.here`, `code/msm.cpp`, `code/ktools.hpp`, `code/run.r`, `code/compile.r`, `code/compile.sh`, `code/run.sh`, `code/check_fits.r`, `code/tasks_f.txt` and `data/cc8.csv.bz2`, and create `logs/`, `fit/` and `fig/` if they are missing. Check that the Slurm scripts suit this cluster: the partition (`fuchs`), the `source` line for `.bashrc` and `conda activate kinh`. If the partition or environment name differs, tell the user and correct only those lines in `code/run.sh` and `code/compile.sh`.
+Confirm that `$HPC_DIR` contains `.here`, `code/msm.cpp`, `code/run.r`, `code/compile.r`, `code/compile.sh`, `code/run.sh`, `code/check_fits.r`, `code/tasks_f.txt` and `data/cc8.csv.bz2`, and create `logs/`, `fit/` and `fig/` if they are missing. Check that the Slurm scripts suit this cluster: the partition (`fuchs`), the `source` line for `.bashrc` and `conda activate kinh`. If the partition or environment name differs, tell the user and correct only those lines in `code/run.sh` and `code/compile.sh`.
 
 Check the R environment on a compute node or in an interactive allocation, not on the login node:
 
 ```bash
 source ~/.bashrc; conda activate kinh
-Rscript -e 'for (p in c("TMB","ktools","here","vroom","dplyr","tidyr","ggplot2","purrr")) cat(p, as.character(packageVersion(p)), "\n")'
+Rscript -e 'for (p in c("TMB","here","vroom","dplyr","tidyr","ggplot2")) cat(p, as.character(packageVersion(p)), "\n")'
 ```
 
 A missing package is a reason to stop and report, not to install into the shared environment without asking.

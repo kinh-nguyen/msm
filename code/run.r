@@ -1,7 +1,12 @@
 # Fit the eight-state model (see DECISIONS.md) for one country and sex.
 # Interactive: edit the defaults below. Batch: Rscript code/run.r <CC> <sex>
-library(ktools)
-library("TMB")
+suppressPackageStartupMessages({
+  library(TMB)
+  library(here)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+})
 
 # 0 V, 1 X, 2 M, 3 D1, 4 W1, 5 R, 6 D2, 7 W2 -- must match msm.cpp
 state_order <- c("V", "X", "M", "D1", "W1", "R", "D2", "W2")
@@ -15,7 +20,7 @@ N_THREADS <- as.integer(Sys.getenv("SLURM_CPUS_PER_TASK", "4"))
 cat("country", CC, "sex", SEX, "threads", N_THREADS, "\n")
 COH_REF = 1975 # birth cohort at which the cohort terms are zero
 
-cc %>%
+tdt <- cc %>%
   filter(cc == CC) %>% 
   filter(sex == SEX) %>% 
   mutate(start = if_else(start == 0, 1, start)) %>% # SHASH is on log age
@@ -35,8 +40,7 @@ cc %>%
     coh = (yob - COH_REF) / 10 # decades
   ) %>%
   select(sv, A, Z, yob, coh, aai, start, end, afs, afm, n, fit, dur) %>%
-  filter(dur >= 1) %>% 
-allot(tdt)
+  filter(dur >= 1)
 
 stopifnot(!anyNA(tdt$A), !anyNA(tdt$Z))
 tdt %>% count(A, Z, fit) %>% print(n = Inf)
@@ -90,7 +94,7 @@ fit <- nlminb(
 )
 
 fit
-fit$par %>% name2list()
+split(unname(fit$par), names(fit$par))
 sdr <- TMB::sdreport(obj)
 summary(sdr, "fixed")
 
@@ -131,10 +135,10 @@ g <- pd %>% filter(cc == CC, sex == sex_lab) %>%
     mj %>% filter(cc == CC, sex == sex_lab)
   ) %>% 
   mutate(name = paste0(A,Z)) %>%
-  left_join(pe, char(start, name)) %>% 
+  left_join(pe, c("start", "name")) %>% 
   mutate(
     name = factor(name, 
-    levels = char(VV, VX, XX, VM, XM, MM, MS, MD, MW))
+    levels = c("VV", "VX", "XX", "VM", "XM", "MM", "MS", "MD", "MW"))
   ) %>% 
   ggplot(aes(start, p_empirical, color = name)) +
   geom_step() +
