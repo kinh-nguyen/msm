@@ -3,7 +3,7 @@
 #   bash code/hpc_fetch.sh
 set -euo pipefail
 HPC_HOST="${HPC_HOST:-fuchs}"
-HPC_DIR="${HPC_DIR:-/scratch/fuchs/fias/knguyen/MultistageSurv}"
+HPC_DIR="${HPC_DIR:-/panfs/vdura1/fuchs/fias/knguyen/MultistageSurv}"
 cd "$(git rev-parse --show-toplevel)"
 mkdir -p fit fig logs/hpc
 rsync -av "$HPC_HOST:$HPC_DIR/fit/fit8_*" fit/ || true

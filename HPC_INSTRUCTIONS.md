@@ -1,6 +1,6 @@
 # Instructions for running the MultistageSurv fits on the cluster
 
-These instructions are for a Claude session that is already connected to the Slurm cluster. Work only inside the project folder on the cluster, referred to below as `$HPC_DIR` (by default `/scratch/fuchs/fias/knguyen/MultistageSurv`). Read `DECISIONS.md` first; it records why the model has its present form. Your task is to compile and run the model, check the results, and report. It is not to change the model.
+These instructions are for a Claude session that is already connected to the Slurm cluster. Work only inside the project folder on the cluster, referred to below as `$HPC_DIR` (by default `/panfs/vdura1/fuchs/fias/knguyen/MultistageSurv`). Read `DECISIONS.md` first; it records why the model has its present form. Your task is to compile and run the model, check the results, and report. It is not to change the model.
 
 ## What the code does
 

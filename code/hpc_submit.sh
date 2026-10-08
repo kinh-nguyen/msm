@@ -7,7 +7,7 @@
 # array task per line of the task file. Needs data/cc8.csv.bz2 (rerun prep.Rmd first).
 set -euo pipefail
 HPC_HOST="${HPC_HOST:-fuchs}"
-HPC_DIR="${HPC_DIR:-/scratch/fuchs/fias/knguyen/MultistageSurv}"
+HPC_DIR="${HPC_DIR:-/panfs/vdura1/fuchs/fias/knguyen/MultistageSurv}"
 TASKS="${1:-code/tasks_f.txt}"
 MAXRUN="${MAXRUN:-10}" # array tasks running at once
 

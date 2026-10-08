@@ -3,6 +3,8 @@
 Last updated 2026-10-07. Covers the sessions of 14–17 Aug 2026.
 Project moved out of Dropbox; its home is now `~/may/papers/MultistageSurv` (git repo).
 
+> Status note, 8 October 2026. This handover has been worked through and its decisions are recorded in `DECISIONS.md`, which supersedes it for the current state. The MM claim in §3 was confirmed from the code and data (all M→M episodes had fit = 3) and fixed. Review items 1 to 4, 7, 9, 12 (countries fitted separately), 13, 14 and 16 are addressed in the eight-state rewrite of `prep.Rmd`, `msm.cpp` and `run.r`; items 6, 8, 10 and 11 needed no change; v538 and v511a are deferred. File paths below predate the reorganisation: `paper.qmd` is now in `paper/`.
+
 ---
 
 ## 1. Where the paper stands

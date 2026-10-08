@@ -1,208 +1,43 @@
----
-title: Multistate model of marital life course
-author: Van Kinh Nguyen
-bibliography: "/Users/knguyen/Documents/zotero_biblatex.bib"
-output:
-  pdf_document:
-    toc: true
-    number_sections: true
-documentclass: article
-linkcolor: blue
-urlcolor: blue
-citecolor: red
----
+# MultistageSurv
 
-# Aims
+Rates of sexual debut, first marriage, union dissolution (divorce or separation, and widowhood) and remarriage for 37 sub-Saharan African countries, estimated from 100 DHS surveys. The estimates are meant to parameterise a life-course HIV transmission model in the style of EPP-ASM, extended with the marital states V, X, U, D and W.
 
-- Estimate four hazard rates of flow below
+`DECISIONS.md` records every modelling decision and change since October 2026 and is the place to start. `HANDOVER.md` is the earlier review (August 2026) that led to them. `HPC_INSTRUCTIONS.md` tells a Claude session on the cluster how to run the fits.
 
-```mermaid
-graph LR;
-  A((Virgin))--> B(Sexual debut);
-  B--> |*| C{Married};
-  C--> D{{Divorce}}
-  C-->E[/Widowed/]
+## Model
+
+Each woman (or man) is followed in age through an eight-state Markov chain: V never had sex and never married, X had sex but never married, M in first union, D1 and W1 first union ended by divorce or widowhood without remarriage, R in a later union, and D2 and W2 a later union ended by divorce or widowhood. These are exactly the cells DHS observes through v501 (marital status) and v503 (number of unions). There are six distinct rates. Debut (V→X), marriage at debut (V→M) and marriage after debut (X→M) have sinh-arcsinh hazards in age, with a linear birth-cohort shift of their location and, for X→M, an effect of time since debut. Divorce, widowhood and remarriage are log-linear in age, time since first marriage and, in countries with more than one survey, birth cohort. Later-union rates are tied to the first-union ones (R→D2 = M→D1, R→W2 = M→W1, all returns to union = D1→R), which is what makes the model estimable country by country and is also the structure of the HIV model. Merging M and R into U, D1 and D2 into D, and W1 and W2 into W is exact under these ties.
+
+The likelihood is built from episodes. Before marriage, ages at debut and marriage are treated as reported events; after marriage each woman contributes the probability of her observed cell at interview, computed by matrix exponentials of the generator year by year. Weights are Kish-normalised by survey and sex and divided by a clustering design effect per survey.
+
+## Layout
+
+```
+code/             current pipeline
+  prep.Rmd        DHS download (rdhs), cleaning, episodes, design effects -> data/cc8.csv.bz2
+  msm.cpp         TMB model
+  run.r           fit one country and sex: Rscript code/run.r <CC> <sex>
+  check_fits.r    summary of all fits -> fit/fit8_summary.csv
+  compile.sh, run.sh            Slurm: compile once, then one array task per country
+  hpc_submit.sh, hpc_fetch.sh   run on the Mac: sync to the cluster and submit, copy results back
+  tasks_f.txt, tasks_m.txt      country and sex per array task
+  surveys.txt     the 100 surveys used
+  rdhs.json       DHS login and cache settings (git-ignored, holds the password)
+identifiability/  technical note on identification, Fisher-information audit, PATCH.md
+checks/           empirical median ages at debut and marriage by birth cohort
+paper/            paper.qmd and its build files
+notes/            exploratory documents
+archive/          superseded code and renders, including the 2022 README
+data/             DHS extracts and derived data (git-ignored)
+fig/, fit/        figures and fitted models
 ```
 
-![Flow1](img/flow1.png)
+## Running
 
-The arrows show which transitions are possible between states in our model.
+First run `code/prep.Rmd` on a machine with DHS access. The `adam` chunk reads `code/rdhs.json`, downloads the individual and men's recode files of the surveys in `code/surveys.txt` (falling back to the Stata file when rdhs cannot read a flat file), and the later chunks write `data/cleaned.rds`, `data/deff.csv` and `data/cc8.csv.bz2`. Check `count(tmp, cell, u)`, the design effects in `data/deff.csv` (mostly between 1 and 3) and `new_d %>% count(A, Z)`.
 
-# Methods
+To fit one country locally, run `Rscript code/run.r ST f`. To fit all countries on the cluster, copy `data/cc8.csv.bz2` there and either follow `HPC_INSTRUCTIONS.md` or run `bash code/hpc_submit.sh` from the Mac (set `HPC_HOST` and `HPC_DIR` if the defaults do not apply), then `bash code/hpc_fetch.sh` and `Rscript code/check_fits.r`.
 
-## Data
+## Status (8 October 2026)
 
-We extract age at first sex, age at marriage, and marital statuses variable from
-DHS. From this, we calculate the time since birth to first sex, from first sex
-to marriage, from married to divorce or widowed.
-
-We assumed that marriage event occurs after sexual debut; in case the events
-coincide, we allowed individual to quickly pass through sexual debut and move to
-married state. Remarried is not considered here as the variable was not
-collected in the DHS.
-
-### Differences in the states transition
-
-- Virgin to sexually debuted and to married: these transitions can be assumed to
-  be exactly observed at the reported AFS and age at married.
-- Married to divorce or widowed: we know the age at marriage and the current
-  state, but we don't know when the divorce or the death of spouse occurred.
-  These transitions are thus interval censored.
-- Union: we know AFS and current state but don't know the time of union. If we
-  group married and union into one group. This will be treated as interval
-  censor between AFS and current age while the married age is treated as exact
-  observed time.
-  - [ ] TODO: need to write code to cover this in the likelihood
-- Separated: depending on whether age at married is know or not; if known,
-  interval censor between age at married and current age, if not interval censor
-  between AFS and age.
-  - [ ] TODO: need to write code to cover this in the likelihood
-
-These differences yield different likelihood contributions.
-
-## Multistate survival model
-
-During the time before the survey, at a time $t$ the individual is in state
-$S(t)$. The next state to which the individual moves, and the time of the
-change, are governed by a set of *transition intensities* $q_{rs}(t, z(t))$ for
-each pair of states $r$ and $s$. The intensities may depend on the process time
-$t$ or individual-specific or time-varying explanatory variables $z(t)$. The
-intensity represents the instantaneous risk of moving from state $r$ to state
-$s$ 
-
-$$q_{ rs }(t, z(t)) = lim_{\delta_t\rightarrow0}\frac{P(S(t+\delta t)=s|S(t)=r)}{\delta t}$$
-
-The intensities form a matrix $Q$ whose rows sum to zero, so that the diagonal
-entries are defined by $q_{rr} =-\sum_{s\neq r}q_{rs}$.
-
-$$Q(t) = \begin{bmatrix}
--q_{VS} & q_{VS} & 0 & 0 & 0 \\
-0 & -q_{SM} & q_{SM} & 0 & 0 \\
-0 & 0 & -(q_{MD} + q_{MW}) & q_{MD} & q_{MW} \\
-0 & 0 & 0 & 0 & 0 \\
-0 & 0 & 0 & 0 & 0 \\
-\end{bmatrix}$$
-
-where $V, S, M, D, W$ denotes virgin, sexually debuted, married, divorce, and
-widowed. To fit a multistate model to data, we estimate matrix Q. 
-
-## Markov assumption
-
-The Markov assumption is that future evolution only depends on the current
-state. That is, $q_{rs}(t,z(t),F_t)$ is independent of the observation history
-$F_t$ of the process up to the time preceding $t$. In a time-homogeneous
-continuous-time Markov model, a single period of occupancy in state $r$ has an
-exponential distribution, with rate given by $-q_{rr}$, (or mean $-1/q_{rr}$).
-The remaining elements of the $r$th row of $Q$ are proportional to the
-probabilities governing the next state after $r$ to which the individual makes a
-transition. The probability that the individual’s next move from state $r$ is to
-state $s$ is $-q_{rs}/q_{rr}$ which altogether forms the *transition probability
-matrix* $P(t)$. 
-
-$P (t)$ can be calculated by taking the matrix exponential of the transition
-intensity matrix $Q$. For a time-homogeneous process, the $(r, s)$ entry of $P (t)$,
-$p_{rs}(t)$, is the probability of being in state $s$ at a time $t + u$ in the
-future, given the state at time $t$ is $r$. It is difficult to calculate
-reliably [@molerNineteenDubiousWays2003]. For simpler models, analytic
-expression for each element of $P (t)$ in terms of $Q$ can be derived. This is
-faster and avoids the potential numerical instability of calculating the matrix
-exponential [@van2016multi].
-
-## Likelihood
-
-Let $i$ indexes $N$ individuals. The data for individual $i$ consist of a series
-of times $t_{i1},..., t_{i m_i}$ and corresponding states $S(t_{i1}),...,
-S(t_{im_i})$, where $m_i$ the number of recorded states which can be be varied
-between individuals. Given a pair of successive states $S(t_j),S(t_{j+1})$ at
-times $t_j , t_j +1$. The contribution to the likelihood from this pair of
-states is 
-
-$$L{i,j} = p_{S(t_j) S(t_{j+1})}(t_{j+1} - t_j)$$ 
-
-which is the entry of the transition matrix $P(t)$ at the $S(t_j)$th row and
-$S(t_{j+1})$th column, evaluated at $t=t_{j+1} - t_j$. The full likelihood $L(Q)$
-is the product of all such terms $L_{i,j}$ over all individuals and all
-transitions.
-
-$$L(Q) = \prod_{i=1}^{i=N}\prod_{j=1}^{m_i - 1} L_{ij}$$
-
-Depending on how the events and times are defined, $P(t)$ can take different
-forms.
-
-### Exact transition time
-
-Assuming individual responses to DHS is accurate, events "observed" in the model
-represents exact transition times in between the states, with no transitions
-occurred between the observation times. For example, response of individual $i$
-to the AFS at time $t_{ij}$ (age) marks the exact time of transition from virgin
-to sexually debuted and that sexually debut events was not occurred in between
-the time from birth and the AFS. In this case, the likelihood contribution does
-not require determining the transition probability $P$ but only the intensity
-matrix $Q$
-
-$$L_{ij} = \exp[q_{S(t_j)S(t_j)}(t_{j+1} - t_j)] \times q_{S(t_j)S(t_{j+1})}$$
-
-since the state is assumed to be $S(t_j)$ throughout the interval between $t_j$
-and $t_{j+1}$ with a known transition to state $S(t_{j+1})$ at $t_{j+1}$.
-
-## Covariates
-
-Explanatory variables for a particular transition intensity can be modelled a
-function of these variables. A proportional hazards model where the transition
-intensity matrix elements $q_{rs}$ of interest can be replaced by
-[@marshallMultistateModelsDiabetic1995]
-
-$$q (z(t)) = q(0)\exp(\beta^T_{rs} z(t))$$
-
-If the covariates $z(t)$ are time dependent, the contributions to the likelihood
-of the form $p_{rs}(t - u)$ are replaced by $p_{rs}(t - u,z(u))$ which requires
-that the value of the covariate is known at every observation time $u$. 
-
-## Implementation
-
-### Model 1 - no random effect - exponential distribution 
-
-Using `msm` package, the likelihood is maximised with crude initial values,
-which can be set supposing that transitions between states take place only at
-the observation times. If we observe $n_{rs}$ transitions from state $r$ to
-state $s$, and a total of $n_r$ transitions from state $r$, then $q_{rs}/q_{rr}$
-can be estimated by $n_{rs}/n_r$. Then, given a total of $T_r$ years spent in
-state $r$, the mean sojourn time $1/q_{rr}$ can be estimated as $T_r/n_r$. Thus,
-$n_{rs}/T_r$ is a crude estimate of $q_{rs}$.
-
-# Preliminary results
-
-## Data
-
-In Malawi survey 2015, 17.9% of the data has AFS older than age at married with
-an average difference of 1.43. 
-  - [ ] how to treat this? a separate model? remove?
-- Two records with married state but no AFS (removed).
-
-The actual flow in data is 
-
-```mermaid
-graph LR;
-  A((Virgin))--> B(Sexual debut);
-  B---> |*| C{Married};
-  A-.-> C;
-  C--> D{{Divorce}};
-  C-->E[/Widowed/];
-  C-.-> B;
-  B-.->D;
-  B-.->E;
-```
-
-![Flow2](img/flow2.png)
-
-![Flow2](img/four_state_raw.png)
-
-In this data all divorce, separate, and widowed were married.
-
-## Fitting model removing all those sexually debuted after married
-
-Those who debuted sexually within a year of marriage age is recoded to the same
-age at married, the rest is discarded for this analysis. 
-
-
-# References
+The eight-state model is written in `prep.Rmd`, `msm.cpp` and `run.r`. `prep.Rmd` is being rerun; `msm.cpp` has not yet been compiled and no country has been fitted. The open items are listed under "Still to do" in `DECISIONS.md`.
