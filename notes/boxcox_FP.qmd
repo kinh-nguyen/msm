@@ -1,0 +1,110 @@
+---
+title: "Untitled"
+format: html
+---
+
+Transformation for fractional polynomial
+
+```{r}
+stable_boxcox <- function(x, p) {
+  log_x = log(x);
+  if (abs(p) < 1e-7) {
+    o = log_x * (1.0 + p*log_x/2.0 + p*p*log_x*log_x/6.0);
+  } else {
+    o = (x^p - 1.0) / p;
+  }
+  o
+}
+x <- 1:80
+plot(x, stable_boxcox(x, 0))
+lines(x, log(x))
+plotl(x, stable_boxcox(x, 2))
+```
+
+```{cpp}
+#include <TMB.hpp>
+
+// --- Helper functions for stable computation ---
+
+// Numerically stable Box-Cox transformation H(x,p) = (x^p - 1)/p
+template<class Type>
+Type stable_boxcox(Type x, Type p) {
+  Type log_x = log(x);
+  // For p ≈ 0, use Taylor series expansion of (exp(p*log_x) - 1) / p
+  if (abs(p * log_x) < 1e-7) {
+    return log_x * (1.0 + p*log_x/2.0 + p*p*log_x*log_x/6.0);
+  } else {
+    return (pow(x, p) - 1.0) / p;
+  }
+}
+
+// Numerically stable divided difference of the Box-Cox transformation
+template<class Type>
+Type stable_boxcox_div_diff(Type x, Type p1, Type p2) {
+  Type delta = p2 - p1;
+  // For p1 ≈ p2, use the derivative dH/dp
+  if (abs(delta) < 1e-7) {
+    Type p = p1;
+    Type log_x = log(x);
+    // Derivative needs its own stable implementation for p ≈ 0
+    if (abs(p) < 1e-7) {
+        return 0.5 * log_x * log_x;
+    } else {
+        return (p * pow(x, p) * log_x - (pow(x, p) - 1.0)) / (p*p);
+    }
+  } else {
+    return (stable_boxcox(x, p2) - stable_boxcox(x, p1)) / delta;
+  }
+}
+
+
+template<class Type>
+Type objective_function<Type>::operator() () {
+  // Data
+  DATA_VECTOR(y);
+  DATA_MATRIX(X); // Predictor(s)
+  int x_col = 0; // Assuming first column of X is the variable of interest
+
+  // Predefined set of powers
+  DATA_VECTOR(S); // e.g., {-2, -1, -0.5, 0, 0.5, 1, 2, 3}
+
+  // Parameters
+  PARAMETER_VECTOR(beta);   // beta_0, beta_1, beta_2
+  PARAMETER(log_sigma);
+  PARAMETER(p1_raw);
+  PARAMETER(p2_raw);
+
+  // Use raw parameters directly to allow sampling on N(0,1)
+  Type p1 = p1_raw;
+  Type p2 = p2_raw;
+
+  // FP Basis calculation
+  vector<Type> x = X.col(x_col);
+  vector<Type> B1(x.size());
+  vector<Type> B2(x.size());
+  for(int i=0; i<x.size(); ++i) {
+    B1(i) = stable_boxcox(x(i), p1);
+    B2(i) = stable_boxcox_div_diff(x(i), p1, p2);
+  }
+
+  // Linear predictor
+  vector<Type> eta = beta(0) + beta(1) * B1 + beta(2) * B2;
+
+  // Likelihood
+  Type nll = -sum(dnorm(y, eta, exp(log_sigma), true));
+
+  // Penalty to encourage powers towards set S
+  Type sigma_penalty = 0.1; // small value, can be fixed or estimated
+  Type p1_penalty = 0.0;
+  Type p2_penalty = 0.0;
+  for (int j=0; j<S.size(); ++j) {
+      p1_penalty += exp(-0.5 * pow((p1 - S(j))/sigma_penalty, 2.0));
+      p2_penalty += exp(-0.5 * pow((p2 - S(j))/sigma_penalty, 2.0));
+  }
+  // Subtract from NLL as this is a log-prior
+  nll -= log(p1_penalty);
+  nll -= log(p2_penalty);
+
+  return nll;
+}
+```

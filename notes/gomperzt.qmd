@@ -1,0 +1,104 @@
+---
+title: "Untitled"
+format: html
+---
+
+The Gompertz distribution is defined by its probability density function (PDF), which can be parameterized in different ways. A common formulation is:
+
+$f(x; \eta, \phi) = \eta e^{\phi x} \exp(-\frac{\eta}{\phi}(e^{\phi x} - 1))$
+
+where $\eta > 0$ is the shape parameter and $\phi$ is the rate parameter.
+
+The cumulative distribution function (CDF) is:
+
+$F(x; \eta, \phi) = 1 - \exp(-\frac{\eta}{\phi}(e^{\phi x} - 1))$
+
+The hazard function, $h(x) = f(x) / (1 - F(x))$, is given by:
+
+$h(x; \eta, \phi) = \eta e^{\phi x}$
+
+This exponential increase in the hazard rate makes the Gompertz distribution particularly useful in survival analysis and demography for modeling adult mortality.
+
+### Implementation in R
+
+Several R packages provide functions for the Gompertz distribution. The specific functions and parameterizations can vary between packages.
+
+-   **`flexsurv`**: The `dgompertz`, `pgompertz`, etc. functions are available. The parameterization is in terms of a shape parameter `shape` ($a$) and a rate parameter `rate` ($b$).
+-   **`eha`**: This package also provides Gompertz distribution functions, with parameterizations suitable for proportional hazards and accelerated failure time models.
+-   **`VGAM`**: The `dgompertz` and related functions use `scale` and `shape` parameters.
+
+A pseudocode example for fitting a Gompertz model in R using `flexsurv` would be:
+
+``` r
+library(flexsurv)
+fit <- flexsurvreg(Surv(time, event) ~ x1 + x2, data = my_data, dist = "gompertz")
+summary(fit)
+```
+
+### Implementation in Stan
+
+Stan does not have a built-in Gompertz distribution. However, you can implement it as a user-defined function. To do so, you would add a `functions` block to your Stan model code and define the log-probability density function (lpdf) for the Gompertz distribution.
+
+``` stan
+functions {
+  real gompertz_lpdf(real x, real eta, real phi) {
+    return log(eta) + phi * x - (eta / phi) * (exp(phi * x) - 1);
+  }
+}
+
+data {
+  int<lower=0> N;
+  vector[N] x;
+  // Define other data, like covariates
+}
+
+parameters {
+  real<lower=0> eta;
+  real phi;
+  // Define other parameters, like regression coefficients
+}
+
+model {
+  // Priors for eta and phi
+  eta ~ exponential(1);
+  phi ~ normal(0, 1);
+
+  // Likelihood
+  for (n in 1:N) {
+    x[n] ~ gompertz(eta, phi);
+  }
+}
+```
+
+### Implementation in TMB
+
+Similar to Stan, TMB does not have a native Gompertz distribution. You would need to define the negative log-likelihood function for the Gompertz distribution within the TMB C++ template.
+
+Your TMB C++ file (`gompertz_model.cpp`) would include something like this:
+
+``` cpp
+#include <TMB.hpp>
+template<class Type>
+Type objective_function<Type>::operator() ()
+{
+  DATA_VECTOR(x);
+  PARAMETER(log_eta);
+  PARAMETER(phi);
+  Type eta = exp(log_eta);
+  Type nll = 0.0;
+  for (int i = 0; i < x.size(); ++i) {
+    nll -= log(eta) + phi * x(i) - (eta / phi) * (exp(phi * x(i)) - 1);
+  }
+  return nll;
+}
+```
+
+This C++ template would then be called from R using the `TMB` package to fit the model to data.
+
+$$
+\beta_0 + \beta_1 age + \beta_2 (age - afm) + aai
+$$
+
+$$
+\beta_0 + \beta_1 afm + \beta_2 (age - afm)
+$$

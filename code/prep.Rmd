@@ -11,10 +11,8 @@ always_allow_html: true
 
 ```{r setup, include=F}
 here::i_am("code/prep.Rmd")
-source('~/Documents/libs.r')
-
-library(rdhs)
-tabyl <- function(dat, ...) janitor::tabyl(dat, ..., show_missing_level = FALSE)
+library(ktools)
+library(forcats)
 set.seed(1)
 ```
 
@@ -23,296 +21,429 @@ set.seed(1)
 Pull with `rdhs`
 
 ```{r adam, eval = F}
-set_rdhs_config(
-    email = "ath19@ic.ac.uk",
-    project = "Statistics and Machine Learning for HIV", password_prompt = T
-)
-# 1
-datasets <- dhs_datasets("MW", fileFormat = "flat", fileType = c("IR")) %>%
-    filter(SurveyYear %in% 2015:2017) %>%
-    mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
-downloads <- get_datasets(datasets$FileName)
+library(rdhs)
+# Login and cache settings come from code/rdhs.json (git-ignored, holds the
+# password). Read it with rdhs's own reader, which also turns the data_frame
+# setting into a function, and create the client from it. All rdhs calls below
+# are given this client explicitly, so the working directory does not matter.
+rdhs_cfg <- rdhs:::read_rdhs_config_file(here("code/rdhs.json"))
+stopifnot(is.character(rdhs_cfg$password), nzchar(rdhs_cfg$password))
+client <- client_dhs(config = rdhs_cfg, root = rdhs_cfg$cache_path)
+cat("rdhs:", rdhs_cfg$email, "| project:", rdhs_cfg$project, "| cache:", rdhs_cfg$cache_path, "\n")
+
+# The 100 sub-Saharan surveys of the analysis (99 for women, ZM2002 men only).
+# The former query had no regional filter and pulled every country, India included.
+surveys <- readLines(here("code/surveys.txt"))
+
+# all formats of the recode files, so that a Stata file can stand in for a
+# flat file that rdhs cannot read
+all_ds <- dhs_datasets(
+    surveyType = "DHS", 
+    fileType = c("IR", "MR"),
+    client = client) %>%
+    filter(SurveyId %in% surveys) %>%
+    mutate(
+        fmt = toupper(substr(FileName, 7, 8)), # FL flat, DT Stata, SV SPSS, SD SAS
+        sex = if_else(FileType == "Individual Recode", "female", "male")
+    )
+datasets <- filter(all_ds, fmt == "FL")
+stopifnot(all(surveys %in% datasets$SurveyId))
+
+# Some flat-file dictionaries (.DCF), mostly of French-language surveys, are
+# latin1. rdhs reads them with brio::read_lines, which marks every line as
+# UTF-8 whatever the locale, and the parser then stops with "input string is
+# invalid". For those surveys use the Stata file of the same recode, which
+# haven reads with its own encoding handling; the variables are the same.
+get_one <- function(fn) {
+    tryCatch(client$get_datasets(fn)[[1]], error = function(e) {
+        # file names differ in case (".zip", ".ZIP"), so match on the upper-case stem
+        stem <- toupper(sub("FL\\.ZIP$", "DT", fn, ignore.case = TRUE))
+        alt <- all_ds$FileName[toupper(sub("\\.ZIP$", "", all_ds$FileName, ignore.case = TRUE)) == stem]
+        if (length(alt) != 1) stop(fn, " could not be read and no single Stata file ", stem, " was found")
+        message(fn, " could not be read (", conditionMessage(e), "); using ", alt)
+        client$get_datasets(alt)[[1]]
+    })
+}
+downloads <- lapply(datasets$FileName, get_one) # same order as datasets
+datasets$used <- basename(unlist(downloads))
+datasets %>% count(fmt_used = if_else(grepl("DT", used, ignore.case = TRUE), "Stata", "flat"))
 ```
 
 ```{r dhs_pull}
-datasets <- readRDS(here("data/dhs_datasets.rds"))
-downloads <- readRDS(here("data/dhs_downloads.rds"))
-names(downloads)
+fid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('IR') %>% which()
+flookup <- c(
+    weights = "v005", dob = "v011", doi = "v008", lab = "lab", afs = "v531", 
+    marriage_age = "v511", n_union = "v503", marital_status = "v501",
+    cluster = "v001", strata = "v022") # cluster and stratum, for the design effect
 
-x <- 1 # adapt from multiple datasets
-o <- readRDS(downloads[[x]]) %>%
-    as_tibble() %>%
-    mutate(lab = datasets$SurveyId[x])
-```
+o <- map_dfr(fid,
+    function(x) {
+        readRDS(downloads[[x]]) %>%
+            as_tibble() %>%
+            mutate(lab = datasets$SurveyId[x]) %>%
+            select(any_of(flookup)) %>%
+            mutate(
+                marital_status = haven::as_factor(marital_status),
+                sex = datasets$sex[x]
+            )
+    }
+)
+saveRDS(o, here("data/femaleSSA.rds"))
 
-Extract and converting date time 
+mid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('MR') %>% which()
+mlookup <- c(weights = "mv005", dob = "mv011", doi = "mv008", lab = 'lab', 
+    afs = "mv531", marriage_age = "mv511", n_union = "mv503", marital_status = "mv501",
+    cluster = "mv001", strata = "mv022")
 
-```{r prep}
-dta <- o %>%
-    select(
-        psu = v021, strata = v023, weights = v005, dob = v011, doi = v008, lab,
-        afs = v531, 
-        marriage_age = v511,
-        n_union = v503,
-        month_1st_union = v507,
-        year_1st_union = v508,
-        cmc_uninon = v509,
-        marital_status = v501,
-        union_married = v502,
-        ever_in = v535
-    ) %>%
-    mutate(
-        marriage_age =  if_else(is.na(marriage_age), 0L, marriage_age),
-        marriage_age2 = (cmc_uninon - dob) / 12,
-        iso = substr(lab, 1, 2),
-        yob = cmc_to_year(dob), svy = cmc_to_year(doi),
-        age = svy - yob, sex = datasets$sex[x]
-    )
+oo <- map_dfr(mid,
+    function(x) {
+        readRDS(downloads[[x]]) %>%
+            as_tibble() %>%
+            mutate(lab = datasets$SurveyId[x]) %>%
+            select(any_of(mlookup)) %>% 
+            mutate(
+                marital_status = haven::as_factor(marital_status),
+                sex = datasets$sex[x]
+            )
+    }
+)
+
+saveRDS(oo, here("data/maleSSA.rds"))
+
+# both male and female
+ooo <- bind_rows(o, oo)
+
+# recode marital statuses
+marital_recode <- c(
+   never = "never in union" ,
+   never = "never married" ,
+   separated = "not living together" ,
+   separated = "seperated" ,
+   separated = "no longer living together/separated" ,
+   union = "living together",
+   union = "living with partner",
+   NULL = "missing"
+)
+ooo %<>% mutate(marital_status = fct_recode(marital_status, !!!marital_recode))
 
 #' Data cleaning
 #'
-dta %<>% filter(haven::zap_label(afs) <= age)
-dta %<>% filter(marriage_age <= age)
-dta %<>% filter(!(marital_status != 0 & afs == 0))
-dta <- dta |>
-    mutate(across(c(marital_status, n_union), haven::as_factor)) %>%
-    mutate(marital_status = forcats::fct_recode(
-        marital_status,
-        separated = "no longer living together/separated",
-        union = "living with partner"
-    ))
-#' remove those had more than once union with less than 3 years ()
-#' get this back when change to smaller time spliting duration
-dta %<>%
-    filter(!( n_union == 'more than once' & age - marriage_age < 3 ))
+ooo %>% 
+    mutate(
+        n_union = haven::as_factor(n_union), 
+        n_union = fct_recode(n_union, NULL = 'missing'),
+        age = floor((doi - dob) / 12), # completed years, as v012 (was round)
+        afs = if_else(afs > 90, NA_real_, afs), # inconsistent, unknown
+        afs = if_else(is.na(afs) & marital_status == "never", 0, afs), # fix missing
+        afs = if_else((afs == 0 | is.na(afs)) & marriage_age != 0 & marital_status != "never", marriage_age, afs), # missing afs but aam say otherwise
+        marriage_age = if_else(marital_status == "never", 0, marriage_age),
+        n_union = if_else(is.na(n_union) & marriage_age == 0, "neverOnce", n_union), 
+        n_union = if_else(is.na(n_union) & marriage_age != 0, "oneORmore", n_union), # as censored since missing in data
+        across(where(is.labelled), zap_label)
+    ) %>%
+    filter(!(is.na(marriage_age) & is.na(afs))) %>%  # interim DHS does not have afs & aam, do they named differently
+    filter(!is.na(marriage_age)) %>% # 225 had afs but not aam, can be done as censored but just removed here
+    filter(n_union != "oneORmore") %>% # 2,761 ever-married women with missing v503 dropped (assumed missing at random)
+    saveRDS(here('data/cleaned.rds'))
 ```
 
 Calculate needed indcator for likelihood
 
 ```{r likelihood_prep}
-dta %>%
-    select(afs, aam = marriage_age, age, u = n_union, ms = marital_status) %>%
-    mutate(
-        afs = if_else(afs > aam & afs > 0 & aam > 0, aam, afs),
-        u = case_when(
-            u == "once" ~ 1, 
-            u == "more than once" ~ 2,
-            otherwise ~ -2908
-        ),
-        n_V = case_when(
-            afs == 0 ~ age, 
-            afs  > 0 ~ afs, 
-            otherwise ~ -2908
-        ),
-        n_X = case_when(
-            afs != 0 & ms == "never in union" ~ age - afs,
-            afs != 0 & ms != "never in union" ~ aam - afs,
-            otherwise ~ -2908,
-        ),
-        n_M = case_when(
-            aam != 0 & u == 1 & (ms == "married" | ms == "union") ~ age - aam,
-            otherwise ~ -2908
-        ),
-        n_N = case_when(
-            aam != 0 & u == 1 & (!ms %in% c("married", "union")) ~ age - aam,
-            aam != 0 & u > 1  ~ age - aam,
-            otherwise ~ -2908
-        ),
-        ms = case_when(
-            ms == 'never in union' & afs == 0 ~ 1,
-            ms == 'never in union' & afs > 0 ~ 2,
-            u == 1 & (ms == 'married' | ms == 'union') ~ 3,
-            ms == 'separated' ~ 4,
-            ms == 'divorced' ~ 5,
-            ms == 'widowed' ~ 6,
-            u == 2 & (ms == 'married' | ms == 'union') ~ 7 # remarried
-        )
-    ) %>%
-    allot(tmp)
-saveRDS(tmp, here::here('data/prep.rds'))
-```
+library(haven)
+readRDS(here('data/cleaned.rds')) %>% 
+  select(lab, sex, afs, afm = marriage_age, dob, aai = age, u = n_union, ms = marital_status,
+         weights, cluster, strata) %>%
+  filter(weights != 0) %>%
+  group_by(lab, sex) %>% # IR and MR files share the survey id, so normalise by sex as well
+  mutate(
+    weights = weights / 10^6, # https://www.dhsprogram.com/data/Guide-to-DHS-Statistics/index.htm#t=Analyzing_DHS_Data.htm&rhsearch=v005&rhhlterm=v005&rhsyns=%20
+    n_eff = sum(weights)^2 / sum(weights^2), # effective sample size
+    kish = weights * n_eff / sum(weights), # Kish weights
+  ) %>%
+  ungroup() %>%
+  select(-n_eff) %>%
+  mutate(
+    across(where(is.labelled), zap_labels),
+    ms = as.character(ms),
+    id = 1:n(),
+    cc = substr(lab, 1, 2),
+    sv = substr(lab, 3, 6),
+    ms = if_else(ms %in% c("married", "union") & u == "once", "M", ms),
+    ms = if_else(ms %in% c("married", "union") & u != "once", "R", ms),
+    ms = if_else(afs == 0 & afm == 0, "V", ms),
+    ms = if_else(afs != 0 & afm == 0, "X", ms),
+    ms = if_else(ms == "separated", "D", ms),
+    ms = if_else(ms == "divorced", "D", ms),
+    ms = if_else(ms == "widowed", "W", ms),
+    # observed post-marriage cell (eight-state model): union order splits D and W
+    cell = case_when(
+      ms == "M" ~ "M",
+      ms == "R" ~ "R",
+      ms == "D" & u == "once" ~ "D1",
+      ms == "W" & u == "once" ~ "W1",
+      ms == "D" ~ "D2",
+      ms == "W" ~ "W2",
+      TRUE ~ NA_character_ # never married
+    ),
+    sex = if_else(sex == 'female', 'f', 'm'),
+    yob = cmc_to_year(dob)
+  ) %>% 
+  select(-dob) %>% 
+allot(tmp)
 
-## Check conditions if missing or incorect
+#' Design effect of the cluster sample, per survey and sex.
+#' deff_total from svymean for the post-marriage cells, age at marriage and age
+#' at first sex; it includes the effect of unequal weights, which the Kish
+#' weights already remove, so only the clustering part deff_total / deff_w is
+#' applied to the weights.
+library(survey)
+options(survey.lonely.psu = "adjust")
+deff_of <- function(d) {
+  if (nrow(d) < 200 || all(is.na(d$cluster))) return(NA_real_)
+  # one 0/1 indicator per post-marriage cell (NA for the never married), so that
+  # svymean never builds a factor, which fails when a survey has a single level
+  cells <- c("M", "D1", "W1", "R", "D2", "W2")
+  for (lv in cells) d[[paste0("c_", lv)]] <- as.numeric(d$cell == lv)
+  st <- if (any(is.na(d$strata))) NULL else ~strata
+  des <- svydesign(ids = ~cluster, strata = st, weights = ~weights, data = d, nest = TRUE)
+  em <- subset(des, !is.na(cell))
+  sx <- subset(des, !is.na(afs) & afs > 0)
+  # deff = "replace": compare with simple random sampling with replacement, so
+  # the Kish-scale weights (mean about 1) are not taken as a population size
+  dv <- function(f, ds) {
+    r <- try(svymean(f, ds, deff = "replace", na.rm = TRUE), silent = TRUE)
+    if (inherits(r, "try-error")) return(c(est = NA_real_, deff = NA_real_))
+    c(est = unname(coef(r)), deff = unname(deff(r)))
+  }
+  v <- c()
+  for (lv in cells) {
+    r <- dv(as.formula(paste0("~c_", lv)), em)
+    if (!is.na(r["est"]) && r["est"] >= 0.01) v <- c(v, r["deff"])
+  }
+  v <- c(v, dv(~afm, em)["deff"], dv(~afs, sx)["deff"])
+  median(v, na.rm = TRUE)
+}
+deffs <- tmp %>%
+  group_by(lab, sex) %>%
+  group_modify(~ tibble(
+    deff_total = deff_of(.x),
+    deff_w = nrow(.x) * sum(.x$weights^2) / sum(.x$weights)^2
+  )) %>%
+  ungroup() %>%
+  mutate(deff_clus = pmax(1, coalesce(deff_total / deff_w, 1)))
+write.csv(deffs, here("data", "deff.csv"), row.names = FALSE)
+deffs %>% summarise(across(starts_with("deff"), list(med = ~ median(.x, na.rm = TRUE), max = ~ max(.x, na.rm = TRUE))))
 
-```{r chek_conditions}
-o <- with(
-    tmp, {
-    o <- vector("character", nrow(tmp))
-    for (i in 1:nrow(tmp)) {
-        if (afs[i] == 0) {
-            o[i] <- paste0(o[i], "VV(1:age)")
-        } else {
-            o[i] <- paste0(o[i], "VV(1:afs)", " * VX(afs)")
-            if (n_X[i] == 0 & aam[i] == 0) { # stay debut afs to age (1 episode)
-                o[i] <- paste0(o[i], " * XX(afs)")
-            }
-            if (n_X[i] > 0) { # stay debut from afs to age
-                o[i] <- paste0(o[i], " * XX(afs:(afs+n_X))")
-            }
-            if (aam[i] > 0) {
-                o[i] <- paste0(o[i], " * XM(aam)")
-                if (u[i] == 1) {
-                    if (n_M[i] == 0) {
-                        o[i] <- paste0(o[i], " * MM(aam)")
-                    }
-                    if (n_M[i] > 0) { # current status is M
-                        o[i] <- paste0(o[i], " * MM(aam:age)")
-                    }
-                    if (n_M[i] == -2908) {
-                        if (n_N[i] == 0) { # any NA n_N here?
-                            o[i] <- paste0(o[i], " * MJ(aam)")
-                        }
-                        if (n_N[i] > 0) {
-                            o[i] <- paste0(o[i], " * M...J(aam:age)")
-                        }
-                    }
-                }
-                if (u[i] > 1) {
-                    if (n_N[i] == 3) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+3)")
-                    }
-                    if (n_N[i] == 4) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+4)")
-                    }
-                    if (n_N[i] == 5) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age+5)")
-                    }
-                    if (n_N[i] > 5) {
-                        o[i] <- paste0(o[i], " * M...J(aam:age>5)")
-                    }
-                }
-            }
+tmp <- tmp %>%
+  left_join(select(deffs, lab, sex, deff_clus), by = c("lab", "sex")) %>%
+  mutate(kish = kish / deff_clus) %>%
+  select(-lab, -weights, -cluster, -strata, -deff_clus)
+
+# Too big the dataset, do sequential insteads
+cc <- unique(tmp$cc)
+dir.create(here("data/cc8"), F)
+
+parallel::mclapply(cc, function(i) {
+cat(i, '\n')
+tmp %>%
+  filter(cc == i) %>% 
+  mutate(neversex = afs == 0, neverwed = afm == 0) %>% 
+  group_by(neversex, neverwed) %>% 
+  group_modify( ~ {
+    .x$VV = 0 # if (.y$neversex && .y$neverwed)
+    if (!.y$neversex && .y$neverwed) {
+      .x$VX = .x$afs
+      .x$XX = .x$afs + 1
+    }
+    if (!.y$neversex && !.y$neverwed) {
+      .x$VM = if_else(.x$afs >= .x$afm, .x$afm, NA_real_)
+      .x$VX = if_else(.x$afs < .x$afm, .x$afs, NA_real_)
+      .x$XX = if_else(.x$afs < .x$afm, .x$afs + 1, NA_real_)
+      .x$XM = if_else(.x$afs < .x$afm, .x$afm, NA_real_)
+    }
+    if (!.y$neverwed) {
+      # one post-marriage episode per ever-married person, ending in the observed cell
+      .x$MM  = if_else(.x$cell == 'M',  .x$afm + 1, NA_real_)
+      .x$MD1 = if_else(.x$cell == 'D1', .x$afm + 1, NA_real_)
+      .x$MW1 = if_else(.x$cell == 'W1', .x$afm + 1, NA_real_)
+      .x$MR  = if_else(.x$cell == 'R',  .x$afm + 1, NA_real_)
+      .x$MD2 = if_else(.x$cell == 'D2', .x$afm + 1, NA_real_)
+      .x$MW2 = if_else(.x$cell == 'W2', .x$afm + 1, NA_real_)
+    }
+    .x
+  }) %>% 
+  ungroup() %>% 
+  pivot_longer(
+    any_of(c("VV", "VX", "VM", "XX", "XM", "MM", "MD1", "MW1", "MR", "MD2", "MW2")), 
+    names_to = 'trans', values_to = 'start'
+  ) %>% 
+  drop_na(start) %>% 
+  select(-starts_with('never'), -u, -ms, -cell) %>% 
+  group_by(cc, sv, sex, id) %>% 
+  mutate(
+    end = if_else(row_number() == n(), aai, lead(start)),
+    A = substr(trans, 1, 1),
+    Z = substr(trans, 2, nchar(trans)), # M, D1, W1, R, D2, W2 for post-marriage episodes
+    d = end - start
+  ) %>%
+  ungroup() %>% 
+  filter(!(start == end & A != 0)) %>% 
+  group_by(cc, sv, sex, yob, aai, afs, afm, start, end, A, Z, d) %>% # fit is now set per episode in run.r
+  summarise(n = sum(kish), .groups = 'drop') %>%
+  write.csv(here("data/cc8", paste0(i, ".csv")), row.names = FALSE)
+},
+mc.cores = 6
+) %>% invisible()
+
+new_d <- vroom::vroom(list.files(here('data/cc8'), full.names = T), show_col_types = FALSE)
+bz2_file <- bzfile(here("data", "cc8.csv.bz2"))
+write.csv(new_d, bz2_file, row.names = FALSE)
+
+new_d <- vroom::vroom(here("data", "cc8.csv.bz2"))
+
+# share of each post-marriage cell, by survey and sex
+new_d %>% 
+  filter(A == 'M') %>% 
+  group_by(cc, sv, sex, Z) %>% 
+  summarise(n = sum(n), .groups = 'drop_last') %>% 
+  mutate(p = n / sum(n)) %>% 
+  ungroup() %>% 
+  ggplot(aes(cc, p, shape = sex, color = factor(sv))) +
+  geom_point() + 
+  facet_wrap(~Z, scales = 'free_y')
+
+# plot match data
+episodes <- vroom::vroom(here("data/new_dw.csv.bz2"), show_col_types = F)
+
+episodes %>%
+  filter(start > 0) %>% 
+  filter(A %in% c('V', 'X'), Z %in% c('V', 'X', 'M')) %>%
+  mutate(
+    tx = start - afs,
+    tx = if_else(is.na(tx)|tx < 0, 0, tx)
+  ) %>% 
+  group_by(cc, sv, sex, A, start, tx) %>%
+  summarise(n_risk = sum(n), .groups = "drop") %>%
+  allot(at_risk)
+
+episodes %>%
+  filter(start > 0) %>% 
+  filter(A %in% c('V', 'X'), Z %in% c('V', 'X', 'M')) %>%
+  mutate(
+    tx = start - afs,
+    tx = if_else(is.na(tx)|tx < 0, 0, tx)
+  ) %>% 
+  group_by(cc, sv, sex, A, Z, start, tx) %>%
+  summarise(n_move = sum(n), .groups = "drop") %>%
+  left_join(at_risk, by = c("cc", "sv", "sex", "A", "start", "tx")) %>%
+  mutate(p_empirical = n_move / n_risk) %>% 
+allot(pd)
+
+write.csv(pd, bzfile(here("data", "pd.csv.bz2")), row.names = FALSE)
+
+# pd <- vroom::vroom(here("data", "pd.csv.bz2"))
+pd  %>% 
+  filter(A=='X', Z =='M', sex == 'male') %>% 
+  ggplot(aes(start, p_empirical)) +
+    geom_point(aes(color=sv), add.legend = FALSE) 
+    # facet_wrap(~cc, scales = 'free_y')
+
+library(mgcv, help, pos = 2, lib.loc = NULL)
+
+pd %>% 
+filter(A == 'X', Z == 'M', sex == 'male') %>%
+# filter(A == 'X', Z == 'M', cc == 'AO', sex == 'male') %>%÷
+mutate(age_grp = cut(start, seq(10, 50, 5))) %>%
+ggplot(aes(tx, p_empirical)) +
+  geom_point(aes(color=age_grp)) +
+  geom_smooth(aes(color=age_grp), se = F, formula = y ~ x, method = MASS::rlm)
+  facet_wrap(~age_grp)
+
+# stepwise empirical for MS MD MW
+hz_np <- function(fit_np) {
+  df <- data.frame(
+    time = fit_np$T_bull_Intervals[2, ],
+    p_mass = fit_np$p_hat
+  )
+  agg_data <- aggregate(p_mass ~ time, data = df, FUN = sum)
+  surv_prob <- 1 - cumsum(agg_data$p_mass)
+  surv_estimates <- data.frame(
+    time = c(0, agg_data$time),
+    surv_prob = c(1, surv_prob)
+  )
+  n <- nrow(surv_estimates)
+  hz_df <- data.frame(
+    interval_start = surv_estimates$time[-n],
+    interval_end = surv_estimates$time[-1],
+    S_t_prev = surv_estimates$surv_prob[-n],
+    S_t_curr = surv_estimates$surv_prob[-1]
+  )
+  hz_df$duration <- hz_df$interval_end - hz_df$interval_start
+  valid_rows <- hz_df$duration > 0 & hz_df$S_t_prev > 0
+  hz_df <- hz_df[which(valid_rows), ]
+  hz_df$hazard_rate <- (hz_df$S_t_prev - hz_df$S_t_curr) / (hz_df$S_t_prev * hz_df$duration)
+  return(
+    data.frame(
+      interval_start = hz_df$interval_start,
+      interval_end = hz_df$interval_end,
+      hazard_rate = hz_df$hazard_rate
+    )
+  )
+}
+
+Mjs <- episodes %>% 
+  group_by(cc, sv, sex) %>% 
+  group_modify( ~ 
+    {
+      cat(paste0(.y[1, ], collapse = ', '), '\n')
+      purrr::map_dfr(c('M', 'S', 'D', 'W'), \(x) 
+      {
+        .x %>%
+          filter(A == 'M', fit != 7) %>% 
+          mutate(
+            l =  start,
+            u =  case_when(
+              A == Z ~ Inf,
+              Z != x ~ Inf,
+              Z == x ~ end,
+            )
+          ) -> tmp
+        if (nrow(tmp) != 0) {
+          o = icenReg::ic_np(tmp[, c('l', 'u')], weights = tmp$n) 
+          o = hz_np(o)
+          o$Z <- x
         }
-    }
-    o
-    }
-)
-
-```
-
-## Likelihood calculation
-
-```{r llh}
-set.seed(2908)
-# fix part
-qM <- matrix(0, 7, 7)
-# main rates
-# -1/q_rr = mean
-qv <- runif(11, 0, 1)
-names(qv) <- char(12, 23, 34, 35, 36, 47, 57, 67, 74, 75, 76)
-# covariates
-betav <- rnorm(2, 0, 0.1)
-
-# changing part
-pM <- function(x, betav_, qv_, qM_, diag = TRUE) {
-    lp <- betav_[1] + betav_[2] * x/100
-    qv_ <- qv_ * exp(lp)
-    qM_[rbind(
-        c(1, 2),
-        c(2, 3),
-        c(3, 4), c(3, 5), c(3, 6),
-        c(4, 7), c(5, 7), c(6, 7),
-        c(7, 4), c(7, 5), c(7, 6)
-    )] <- qv_
-    diag(qM_) <- -1 * rowSums(qM_)
-    mexp <- Matrix::expm(qM_)
-    if (!diag) diag(mexp) <- 0
-    mexp
-}
-
-MJ <- function(J, n_N_, aam_, betav_, qv_, qM_) {
-    oo <- matrix(1, 2, 2)
-    if (n_N_ > 1)
-        for (a in 1:(n_N_ - 1))
-            oo <- oo %*% pM(aam_ + a, betav_, qv_, qM_)[c(3, J), c(3, J)]
-    oo <- pM(aam_, betav_, qv_, qM_)[3, c(3, J)] %*% oo %*% 
-        pM(aam_ + n_N_, betav_, qv_, qM_)[c(3, J), J]
-    oo
-}
-
-list2env(as.list(tmp), .GlobalEnv)
-o <- rep(1L, length(age))
-NN <- length(age)
-for (i in 1:NN) {
-    if (afs[i] == 0) {
-        for (a in 0:age[i]) o[i] = o[i] * pM(a, betav, qv, qM)[1, 1] # VV(1:age)
-    } else {
-        for (a in 0:afs[i]) o[i] = o[i] * pM(a, betav, qv, qM)[1, 1] # VV(1:afs)
-        o[i] = o[i] * pM(afs[i], betav, qv, qM)[1, 2] # VX(afs)
-        if (n_X[i] == 0 & aam[i] == 0) o[i] = o[i] * pM(afs[i], betav, qv, qM)[2, 2] # XX(afs)
-        if (n_X[i] > 0) for (a in afs[i]:(afs[i]+n_X[i])) o[i] = o[i] * pM(a, betav, qv, qM)[2, 2] # XX(afs:(afs+n_X))
-        if (aam[i] > 0) {
-            o[i] = o[i] * pM(aam[i], betav, qv, qM)[2, 3] # XM(aam)
-            if (u[i] == 1) {
-                if (n_M[i] == 0) o[i] = o[i] * pM(aam[i], betav, qv, qM)[3, 3] # MM(aam)
-                if (n_M[i] > 0) for (a in aam[i]:age[i]) o[i] = o[i] * pM(a, betav, qv, qM)[3, 3] # MM(aam:age)
-                if (n_M[i] == -2908) {
-                    if (n_N[i] == 0) o[i] = o[i] * pM(aam[i], betav, qv, qM)[3, ms[i]] # MJ(aam)
-                    if (n_N[i] > 0) o[i] = o[i] * MJ(ms[i], n_N[i], aam[i], betav, qv, qM) # M...J(aam:age)
-                }
-            }
-            if (u[i] > 1) {
-                if (n_N[i] == 3) { # M...J(aam:age+3)
-                    o[i] = o[i] * 
-                    pM(aam[i] + 0, betav, qv, qM)[3, c(4,5,6)] %*%
-                    pM(aam[i] + 1, betav, qv, qM)[c(4,5,6), 7] *
-                    pM(aam[i] + 2, betav, qv, qM)[7, ms[i]] # 77 = RM = RR =? MM
-                }
-                if (n_N[i] == 4) { # M...J(aam:age+4)
-                    J = ms[i]
-                    if (ms[i] != 7)
-                        o[i] = o[i] * 
-                        pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                        pM(aam[i] + 1, betav, qv, qM)[3:6, 4:7] %*%
-                        pM(aam[i] + 2, betav, qv, qM, diag = FALSE)[4:7, c(J, 7)] %*%
-                        pM(aam[i] + 3, betav, qv, qM)[c(J, 7), J]
-                    if (ms[i] == 7)
-                        o[i] = o[i] *
-                        pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                        pM(aam[i] + 1, betav, qv, qM)[3:6, 4:7] %*%
-                        pM(aam[i] + 2, betav, qv, qM)[4:7, 4:7] %*%
-                        pM(aam[i] + 3, betav, qv, qM)[4:7, 7]
-                }
-                if (n_N[i] > 4) { # M...J(aam:age+5+)"
-                    J = ms[i]
-                    oo <- matrix(1, 5, 5)
-                    qp <- matrix(1, 2, 2)
-                    if (n_N[i] > 5) {
-                        for (a in 2:(n_N[i] - 4)) {
-                            oo <- oo %*% pM(aam[i] + a, betav, qv, qM)[3:7, 3:7]
-                            if (J != 7)
-                                qp <- qp %*% pM(aam[i] + a, betav, qv, qM)[c(3,J), c(3,J)]
-                        }
-                    }
-                    if (ms[i] != 7)
-                        o[i] = o[i] * 
-                        (
-                            pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[3:6, 3:7] %*%
-                            oo %*%
-                            pM(aam[i] + n_N[i] - 3, betav, qv, qM)[3:7, 4:7] %*%
-                            pM(aam[i] + n_N[i] - 2, betav, qv, qM)[4:7, c(J, 7)] %*%
-                            pM(aam[i] + n_N[i] - 1, betav, qv, qM)[c(J, 7), J] -
-                            
-                            pM(aam[i] + 0, betav, qv, qM)[3, c(3, J)] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[c(3, J), c(3, J)] %*%
-                            qp %*%
-                            pM(aam[i] + n_N[i] - 3, betav, qv, qM)[c(3, J), J] *
-                            pM(aam[i] + n_N[i] - 2, betav, qv, qM)[J, J] *
-                            pM(aam[i] + n_N[i] - 1, betav, qv, qM)[J, J]
-                        )
-                    if (ms[i] == 7)
-                        o[i] = o[i] *
-                            pM(aam[i] + 0, betav, qv, qM)[3, 3:6] %*%
-                            pM(aam[i] + 1, betav, qv, qM)[3:6, 3:7] %*%
-                            oo %*%
-                            pM(aam[i] + 2, betav, qv, qM)[3:7, 4:7] %*%
-                            pM(aam[i] + 3, betav, qv, qM)[4:7, 4:7] %*%
-                            pM(aam[i] + 4, betav, qv, qM)[4:7, J]
-                }
-            }
+        else {
+          o = data.frame(interval_start = 0, interval_end = 0, hazard_rate = 0)
+          o$Z <- x
         }
+        o
+      }) %>% 
+      transmute(
+        A = 'M', 
+        Z = Z,
+        start = interval_start, 
+        p_empirical = hazard_rate
+      )
     }
-}
-range(o[1:NN])
+  )
+
+write.csv(Mjs, file = here('data', 'mjs.csv'), row.names = FALSE)
+
+episodes %>%
+  mutate(tm = aai - afm) %>% 
+  filter(tm > 0) %>% 
+  group_by(aai) %>% 
+  summarise(mean = mean(tm), sd = sd(tm), u = mean  + 2 * sd, l = mean - 2 * sd) %>% 
+  ggplot(aes(aai, mean)) + 
+  geom_point() +
+  geom_linerange(aes(ymin = l, ymax = u))
+
+Mjs %>%
+  ggplot(aes((start), p_empirical, color = sex)) +
+  geom_point(size = .7) +
+  scale_y_continuous(trans = 'log') +
+  geom_smooth(method = 'lm', se = F) +
+  facet_grid(vars(Z), vars(sex))
 ```
