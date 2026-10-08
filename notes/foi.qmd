@@ -1,0 +1,540 @@
+---
+title: "Quantifying Risk in a Dynamic World: A Comparative Analysis of Challenges in Estimating the Age-Specific Force of Infection for COVID-19, HIV, and Tuberculosis"
+metadata-files:
+  - "/Users/knguyen/_meta.yml"
+editor: 
+  render-on-save: true
+bibliography: foi.bib
+---
+
+# Executive Summary
+
+The age-specific force of infection (FOI), defined as the rate at which
+susceptible individuals of a certain age acquire an infection. FOI is critical
+for estimate outbreak trajectories, identifying high-risk populations, designing
+targeted interventions, and evaluating the impact of public health programs. 
+
+FOI estimation is challenging, constrained by the quality, availability, and
+nature of epidemiological data. For COVID-19, the primary challenges is the
+temporal dynamism, the rapid emergence of variants with altered transmissibility
+and immune escape properties, coupled with a high and age-dependent proportion
+of unobserved asymptomatic infections and a complex, shifting landscape of
+population immunity from vaccination and prior infection, renders traditional
+equilibrium-based models obsolete. This necessitates a shift towards real-time,
+dynamic estimation methods.
+
+For HIV, the challenge is the alteration of its natural history by
+antiretroviral therapy (ART). The success of ART increases HIV prevalence by
+extending life expectancy, while simultaneously decreasing the FOI by rendering
+treated individuals non-infectious. This decoupling of prevalence from
+transmission risk makes naive interpretation of surveillance data misleading and
+mandates the use of mechanistic models, such as back-calculation, that can
+deconvolve the long history of infection and explicitly account for the impact
+of treatment.
+
+For Tuberculosis, the estimation problem is dominated by biological ambiguity
+and statistical non-identifiability. The existence of a vast global reservoir of
+latent TB infection (LTBI), combined with the inability of current diagnostics
+to distinguish between recent infection, remote infection, and reactivation,
+means that multiple, mechanistically distinct scenarios can plausibly explain
+observed patterns of disease. Disentangling the contributions of historical
+transmission, age-related immune senescence, and social mixing patterns to the
+current TB burden is a challenge.
+
+## The Force of Infection
+
+Force of Infection (FOI) quantifies the instantaneous risk of infection for
+susceptible individuals within a population [@roberts2003; @alexander2021].
+Formally denoted as $\lambda(a)$, the age-specific FOI is the per capita rate at
+which susceptible individuals of age 'a' contract a specific pathogen
+[@hethcote2000; @taylorfrancis_foi]. It is the epidemiological analogue of the
+hazard rate in survival analysis, representing the instantaneous probability of
+transitioning from a susceptible to an infected state [@gandon2021].
+
+The magnitude of the FOI is determined by intrinsic transmissibility of the
+pathogen, the prevalence and infectiousness of infected individuals, and the
+rate and nature of effective contacts between susceptible and infectious persons
+[@roberts2003; @gandon2021]. In mathematical models, this is often expressed as
+a function of the transmission rate per contact ($\beta$), the number or
+proportion of infectious individuals in the population ($I$), and the structure
+of contact patterns, which may vary by age [@taylorfrancis_foi; @cori2013].
+
+### The Link to Seroprevalence: The Catalytic Model
+
+The conceptual foundation for estimating FOI is the catalytic model [@hens2009;
+@muench1934; @hens2009a; @hens2009b]. This model provides a mathematical bridge
+between the unobservable FOI and an observable quantity: the age-specific
+proportion of a population that has been previously infected. For infections
+that confer long-lasting, measurable immunity (e.g., via antibodies), this
+proportion can be estimated from serological surveys (seroprevalence). In this
+model, the proportion of individuals who remain susceptible at age 'a', denoted
+$S(a)$, is a function of their cumulative exposure to the risk of infection up
+to that age. Assuming that infection confers lifelong immunity, the relationship
+is given by the following integral equation [@gandon2021; @hens2009]:
+
+$$S(a) = \exp\left(-\int_{0}^{a} \lambda(u) du\right)$$
+
+The integral of the FOI, $\int_{0}^{a} \lambda(u) du$, represents the cumulative
+hazard of infection by age 'a'. The proportion of the population that is
+seropositive (immune) at age 'a', $\pi(a)$, is $1 - S(a)$. Accurately measure
+the age-specific seroprevalence curve yields the underlying age-specific FOI
+[@taylorfrancis_foi; @gandon2021]. The FOI at age 'a' is the derivative of the
+cumulative hazard, which can be expressed in terms of the seroprevalence curve
+[@gandon2021]
+$$\lambda(a) = \frac{d\pi(a)/da}{1 - \pi(a)}$$
+
+- FOI is a primary driver of epidemic dynamics is crucial for forecasting the
+potential size, peak, and mortality of an outbreak [@taylorfrancis_foi;
+@gandon2021; @cori2013].
+- FOI allows the identification of
+  high-risk populations and transmission hotspots, enabling the efficient
+  targeting of interventions [@alexander2021; @cori2013; @wallinga2006]. For
+  childhood diseases, the FOI is highest among young, school-aged
+  children due to high contact rates in that demographic [@hens2009; @rohani2003].
+- Changes in the FOI over time serve as a 
+  indicator of the effectiveness of public health measures. A successful
+  vaccination program could lead to a demonstrable reduction in the FOI among
+  targeted age groups [@roberts2003; @alexander2021; @roberts2003a; @bubar2021].
+- FOI help determine which age groups to prioritize 
+  for greatest reduction in transmission and disease burden, and they inform
+  calculations of the vaccination coverage needed to reach herd immunity thresholds [@taylorfrancis_foi; @wallinga2006; @bubar2021].
+- When multiple pathogens co-circulate, understanding the overlap in their
+  age-specific FOIs provide insights into mechanisms of disease interference,
+  where infection with one pathogen may alter susceptibility to another [@rohani2003].
+
+The true proportion of susceptible individuals, $S(a)$, across ages and times
+subject to sampling error, selection biases, the performance of diagnostic tests
+[@roberts2003; @alexander2021; @gostic2020; @ferrari2008]. Furthermore, the
+catalytic model assumes that FOI is constant over the lifetime of the
+individuals, which often changes by population behavior, control measures, or
+the evolution of the pathogen [@taylorfrancis_foi; @hens2009; @hens2009a]. 
+
+## Modern Methodological 
+
+### Parametric and Non-Parametric Approaches
+
+The catalytic model is a parametric method assuming that the FOI, $\lambda$, is
+constant with respect to both age and calendar time [@hens2009; @hens2009a;
+@hens2009b]. For many infections, transmission risk is highly dependent on
+age-related contact patterns, e.g,, data for diseases parvovirus B19
+[@hens2009b]. Early parametric extensions allowed the FOI to vary such as
+linearly [@hens2009].
+
+- Smoothing splines or penalized splines (P-splines) model FOI as a flexible,
+  smooth curve [@shkedy2006]. This approach is implemented within the framework
+  of GLMM [@shkedy2006].
+- Local Polynomial and Kernel Smoothing methods estimate FOI at a specific age
+  by fitting to a "local" subset of the data centered around that age. This
+  provides a smooth estimate of the FOI curve without making any global
+  assumptions about its shape [@shkedy2006].
+
+### Bayesian and MCMC
+
+A widespread adoption of Bayesian statistical methods implemented using Markov
+chain Monte Carlo (MCMC) [@odriscoll2009; @odriscoll2009a; @roberts2007]. The
+Bayesian offers a powerful framework for dealing with the uncertainty in
+epidemiological data [@cauchez2009; @alexander2021; @blower2020;
+@alexander2021a]. A prime example is accounting for imperfect diagnostic tests
+[@alexander2021; @alexander2021a; @alexander2021b;@alexander2021]. Ignoring
+these can lead to biased FOI estimates [@alexander2021a]. By simulating missing
+data points, the model fitting process is often greatly simplified
+[@odriscoll2009a].
+
+### Integrating Diverse Data Streams for a More Realistic Model
+
+- Contact Matrices: The FOI is driven by who has contact with whom. Instead of
+assuming "mass-action" mixing where everyone has an equal chance of interacting,
+contemporary models often incorporate age-specific social contact matrices
+[@gandon2021; @birrell2021]. These matrices quantify the average rate of contact
+between different age groups [@wallinga2006; @mossong2008]. By structuring the
+transmission term $\beta(a, a')$ according to these empirical patterns, models
+can more accurately represent, for example, the intense transmission among
+school-aged children and the lower contact rates of the elderly
+[@taylorfrancis_foi; @wallinga2006]. 
+- Genomic and Contact Tracing Data: The synthesis of traditional surveillance
+data with modern data sources [@hay2004].
+Detailed contact-tracing data can reconstruct who infected whom can be further
+enhanced by viral genomic sequencing, which can confirm or refute suspected
+transmission links based on the genetic similarity of pathogens isolated from
+different individuals [@hay2004]. 
+- The SIRE Model: the Susceptibility, Infectivity, and Recoverability
+Estimation) tool [@blower2020] simultaneously
+estimate the influence of both genetic factors (like single nucleotide
+polymorphisms, or SNPs) and non-genetic factors on the three core
+epidemiological traits of a host. By analyzing epidemic data, it can infer how
+these traits vary among individuals, representing a significant step towards a
+more personalized understanding of transmission dynamics [@blower2020].
+
+*   Incomplete case reporting, delays between infection and
+notification, and ascertainment bias (where the likelihood of a case being
+detected and reported varies, for example, by symptom severity) can
+introduce substantial biases into FOI estimates [@alexander2021; @cori2013;
+@gostic2020].
+*   Complex models require assumptions about the duration of the infectious
+period, the distribution of the serial interval, the constancy of reporting
+rates, or the nature of immunity [@saadroy2022; @cori2013a]. If these
+assumptions are violated, the model can produce misleading results
+[@gostic2020a]. *non-identifiability* potentially leading to conclusions driven
+more by assumption than by evidence [@cauchez2009;@alexander2021].
+*   MCMC analyses can be computationally intensive and limits their
+accessibility to non-specialist users [@odriscoll2009a; @cori2013a].
+*   Estimate time-varying transmission (time-varying reproduction number, $R_t$)
+often subject to right-censoring, creating an inherent lag [@cori2013a;
+@gostic2020a]. Furthermore, these methods often require 
+a smoothing parameter which can oversmooth the data and mask real, rapid
+changes in transmission [@cori2013a; @nash2022].
+
+| Method/Approach | Underlying Principle | Data Requirements | Key Strengths | Principal Limitations/Cons |
+| :--- | :--- | :--- | :--- | :--- |
+| **Constant FOI Catalytic Model** | Assumes a constant risk of infection over age and calendar time (time/age homogeneity). [@hens2009; @hens2009a] | Single cross-sectional serosurvey. [@hens2009b] | Simplicity, ease of implementation, requires minimal data. | Unrealistic assumptions often lead to poor model fit and inaccurate estimates. [@hens2009b] |
+| **Piecewise/Spline-Based Models** | Models the FOI as a flexible, data-driven curve, avoiding rigid pre-specified functional forms. [@shkedy2006] | Cross-sectional serosurvey. [@shkedy2006] | High flexibility, allows the data to determine the shape of the FOI curve. | Risk of overfitting, estimates can be sensitive to the choice of knots or smoothing parameters. [@shkedy2006] |
+| **Models with Contact Matrices** | Assumes transmission is not random but is structured by age-specific social contact patterns. [@gandon2021; @wallinga2006] | Serosurvey data plus empirical contact data (e.g., from surveys like POLYMOD). [@birrell2021] | Provides a more mechanistic and realistic representation of transmission dynamics. [@wallinga2006] | Contact data can be difficult to obtain, may be outdated, or may not reflect behavior during an epidemic. [@birrell2021] |
+| **Bayesian MCMC Frameworks** | Estimates the full posterior probability distribution of parameters, treating them as random variables. [@odriscoll2009; @odriscoll2009a] | Various data types: serology, case notifications, clinical data, etc. [@odriscoll2009a] | Formally quantifies uncertainty, can incorporate prior knowledge, and can model test imperfections. [@alexander2021] | Computationally intensive, can be sensitive to prior specification, potential for parameter non-identifiability. [@odriscoll2009a; @roberts2007] |
+| **Back-Calculation Models** | Reconstructs the historical incidence of infection by working backward from observed diagnosis data (e.g., HIV/AIDS cases). [@motta2024] | Time series of diagnoses by age, distribution of the incubation/latency period. [@motta2024] | Powerful for chronic diseases with long latency, disentangling past from present transmission. | Highly sensitive to assumptions about diagnosis rates and the latency period distribution. [@motta2024] |
+| **Real-Time Rt Estimation** | Estimates the instantaneous reproduction number ($R_t$) as the ratio of new cases to the total infectiousness of past cases. [@cori2013a] | Time series of case incidence, distribution of the serial interval. [@cori2013a] | Enables real-time tracking of epidemic transmissibility. [@nash2022] | Suffers from data lags, right-censoring, and difficulty in attributing the cause of changes in $R_t$. [@cori2013a; @gostic2020a] |
+
+## Case Study I: The Unprecedented Challenge of COVID-19
+
+The COVID-19 pandemic features a large proportion of unobserved infections,
+rapid viral evolution, and a complex, dynamically changing immunity landscape.
+
+### Asymptomatic and Presymptomatic Transmission
+
+SARS-CoV-2 can be transmitted by individuals who show no signs of illness. A
+substantial fraction of infections are entirely asymptomatic, with estimates 
+from 1% to 92% [@gao2022]. This heterogeneity is driven in part by a strong,
+non-linear relationship with age: the asymptomatic proportion is highest in
+young children and adolescents and declines steadily with increasing age
+[@gao2022; @byambasuren2022; @lefrancais2022]. In addition to fully asymptomatic
+cases, transmission occurs during the presymptomatic phase, before an individual
+develops symptoms [@phac2022].
+
+These unobserved infections contribute substantially to the overall transmission
+potential, with some epidemiological models attributing 50% or more of the total
+FOI to the combined effect of presymptomatic and asymptomatic cases
+[@nande2021]. The standard surveillance systems are biased toward detecting
+symptomatic individuals making true incidence is systematically
+under-ascertained [@gao2022; @nande2021]. Estimating the true FOI therefore
+requires moving beyond simple case counts and employing models that can
+integrate multiple data streams, such as population-level seroprevalence surveys
+and hospitalization data, to infer the size of the unobserved iceberg of
+infections [@birrell2021; @nande2021].
+
+### Modeling Rapidly Evolving Variants
+
+The COVID-19 pandemic has a series of overlapping epidemics driven by the
+successive emergence of SARS-CoV-2 Variants of Concern (VOCs) [@phac2022;
+@gandon2021a]. Each major variant has introduced significant changes to key
+epidemiological parameters. Delta variant was estimated to be more transmissible
+than the Alpha, and Omicron was found to be more transmissible than Delta, while
+also exhibiting a significant degree of immune escape, allowing it to infect
+previously vaccinated or infected individuals [@phac2022].
+
+This means that the FOI is a highly dynamic function of both time and the
+dominant circulating variant [@saadroy2022]. Model that assumes a time-invariant
+FOI is unsuitable for analyzing the COVID-19 pandemic [@taylorfrancis_foi]. This
+led to methods that can estimate time-varying reproduction number ($R_t$)
+[@cori2013a; @gostic2020a]. However, a sudden increase in estimated $R_t$ could
+be due to the introduction of a new, more transmissible variant, but it could
+also be caused by changes in population behavior (e.g., holiday gatherings), the
+easing of public health measures, or seasonality. Disentangling these factors is
+a major analytical challenge [@cori2013a; @gandon2021a].
+
+### The Complex Landscape of Population Immunity
+
+The response to the pandemic, primarily through mass vaccination, has created a
+complex and heterogeneous landscape of population immunity [@gandon2021;
+@saadroy2022; @kissler2022]. This is shaped by a mixture of vaccination
+(including primary series and multiple booster doses), prior infection with one
+or more variants, and the waning of both vaccine-induced and infection-acquired
+immunity over time [@gostic2020; @phac2022; @kissler2022].
+
+This presents a severe challenge for defining the "Susceptible" (S) compartment
+in epidemiological models. Their level of protection against infection exists on
+a continuum, determined by history of exposures and vaccinations. COVID-19
+vaccines have different efficacies against infection and changes with the
+emergence of new variants [@kissler2022; @bubar2021]. The Omicron variant led to
+a surge in breakthrough infections among vaccinated and previously infected
+individuals [@phac2022; @kissler2022].
+
+To capture this reality, highly stratified compartmental models (unvaccinated,
+one dose, two doses, boosted), history of prior infection, and time since last
+vaccination or infection to account for waning immunity [@saadroy2022]. This
+dramatically increases model complexity [@gostic2020; @saadroy2022].
+
+The combination of asymptomatic spread, rapid viral evolution, and a complex,
+dynamically immunity landscape make need adoption and development of methods for
+estimating the *instantaneous* reproduction number, $R_t$ [@cori2013a;
+@nash2022]. Yet, data reporting lags, changes in testing strategies, and the
+fundamental difficulty of interpreting what a change in $R_t$ truly signified
+[@cori2013a; @gostic2020a]. Multi-stratified models to capture the patchwork of
+population immunity [@saadroy2022]. massive uncertainty surrounding parameters 
+the effectiveness of a vaccine [@gostic2020; @kissler2022]. 
+
+## Case Study II: The Long-Term Dynamics of HIV
+
+HIV epidemiology is characterized by long-term, chronic processes, a lengthy
+period of infectious latency, and a natural history that has been fundamentally
+reshaped by decades of effective medical intervention.
+
+### The Challenge of Latency and Disease Progression
+
+HIV infection is characterized by a long and highly variable clinical latency
+period. Following an acute infection phase, an individual can remain
+asymptomatic for many years—on average, about eight years, but ranging from
+three to over 20 years—without treatment [@wiki_hiv_2024]. Throughout much of
+this asymptomatic period, the individual is infectious and can transmit the
+virus.
+
+This long timescale is a major obstacle for FOI estimation. Data from a
+cross-sectional seroprevalence survey conducted in a given year reflects a
+cumulative history of infections that may have occurred at any point over the
+preceding decades [@mahiane2022]. The prevalence of HIV in 40-year-olds today is
+a function of the FOI they were exposed to at age 20, 30, and 39, not just the
+FOI at age 40. Therefore, prevalence data alone does not directly measure the
+*current* risk of infection [@hallett2008]. Estimating contemporary FOI from
+such data requires sophisticated methods that can deconvolve this long and
+complex history of infection, mortality, and population change [@mahiane2022].
+
+### Epidemiological Shift from Antiretroviral Therapy (ART)
+
+The widespread scale-up of highly active antiretroviral therapy (ART) since the
+mid-1990s has been one of public health's greatest triumphs, transforming HIV
+from a universally fatal disease into a manageable chronic condition
+[@guaraldi2009; @deeks2009; @saag2016]. This success, however, has created a
+profound paradox for epidemiological estimation.
+
+Effective ART suppresses an individual's HIV viral load to undetectable levels.
+This has a dual benefit: it preserves the person's immune function and it also
+prevents onward transmission of the virus. This is known as Undetectable =
+Untransmissible (U=U) [@motta2024; @eisinger2019]. ART *increases* the
+prevalence of HIV in a population by ensuring that people living with HIV
+survive for many decades [@mahiane2022]. Simultaneously, it *decreases* the FOI
+by effectively removing treated individuals from the infectious pool.
+
+This severs the traditional relationship where FOI is proportional to
+prevalence. A rising prevalence of HIV in a population, particularly in older
+age groups, is no longer a clear signal of rising transmission. [@guaraldi2009;
+@eisinger2019; @eaton2022]. 
+
+### Behavioral Data and Testing Patterns
+
+HIV transmission is driven by specific, often stigmatized, behaviors. While
+behavioral surveys are conducted, collecting accurate and unbiased data on
+sexual behavior and drug use is notoriously difficult. The diagnosis itself is a
+key epidemiological event. A substantial proportion of new HIV
+transmissions—estimated at 38% in one study—originate from individuals who are
+infected but unaware of their status [@hall2012; @girardi2007].
+
+Late diagnosis remains a persistent problem, particularly among individuals who
+perceive themselves to be at low risk, including older adults [@motta2024;
+@girardi2007]. This creates another layer of complexity for estimation. The FOI
+is not only a function of underlying risk behaviors but is also modulated by
+age-specific patterns of HIV testing and diagnosis. To estimate the true number
+of new infections, models must account for the latent population of undiagnosed
+individuals, a quantity that is difficult to measure directly and must itself be
+inferred [@motta2024].
+
+### Advanced Estimation Methods for HIV
+
+*   Back-Calculation Models: 
+uses surveillance data on AIDS diagnoses (or, more recently, HIV diagnoses),
+stratified by age and time, along with a statistical distribution of the
+incubation period (the time from infection to diagnosis/AIDS). By knowing
+when people were diagnosed, the model can mathematically work backward to
+reconstruct the historical pattern of HIV infections that must have occurred
+in the past to generate the observed diagnoses [@motta2024]. 
+- Age- and Time-Dependent Models from Serial Surveys: 
+leverages data from multiple cross-sectional seroprevalence surveys conducted
+several years apart (e.g., Demographic and Health Surveys) [@mahiane2022]. By
+tracking the prevalence of HIV within specific birth cohorts as they age across
+the different surveys, it is possible to infer the incidence (and thus the FOI)
+that occurred in the interval between the surveys. This method allows for the
+simultaneous estimation of effects related to age, calendar time (reflecting
+broad changes like ART availability), and birth cohort (reflecting lifelong
+cumulative risk) [@mahiane2022].
+
+A naive observation of rising HIV prevalence among older adults could easily be
+misinterpreted as a sign of increasing transmission risk in that group
+[@mahiane2022]. However, a mechanistic model that correctly represents the
+underlying biology and clinical reality—including compartments for individuals
+on suppressive ART—reveals the true dynamic. The rising prevalence is not a
+marker of transmission failure, but of treatment *success*, as people with HIV
+live long, healthy lives and "age into" these older demographic brackets
+[@mahiane2022; @guaraldi2009]. The actual FOI for acquiring HIV is typically
+highest at much younger ages [@mahiane2022]. 
+
+## Case Study III: The Deep Reservoir of Tuberculosis
+
+The challenges of estimating the age-specific FOI for Tuberculosis (TB) are
+rooted in the pathogen's unique and complex interaction with the human immune
+system, defined by a state of prolonged latency. combined with the limitations
+of current diagnostics, creates ambiguity and non-identifiability 
+
+### Infection, Reactivation, and Reinfection
+
+Mycobacterium tuberculosis is able to establish a long-term, clinically silent
+latent infection (LTBI) following initial exposure [@who2016; @houben2016]. A
+quarter of the world's population harbors LTBI, creating a vast reservoir from
+which future cases of active disease can emerge [@cohen2019; @ragonnet2019;
+@pai2011].
+
+Active TB disease, symptomatic and can transmit the pathogen, arise through two
+pathways: (1) rapid progression to disease shortly after an initial infection
+(primary progression), or (2) reactivation of a latent infection that was
+acquired months, years, or even decades earlier [@houben2016;
+@statpearls_ltbi_2024; @chee2022]. Furthermore, an individual with LTBI can be
+reinfected with a new strain of TB.
+
+The FOI, by definition, measures the rate of *new infections*. However,
+surveillance data consists of notifications of *active TB cases*. A surge in
+active TB cases within a specific age group could be driven by different
+underlying dynamics. It could signal a recent outbreak and a high current FOI,
+or it could reflect a "cohort effect," where a large number of individuals are
+reactivating infections they acquired years ago when the FOI was higher
+[@lin2020]. Standard cross-sectional data, whether on active case notifications
+or LTBI prevalence, cannot easily distinguish between these scenarios
+[@cohen2019; @lin2020; @houben2016a].
+
+### Imperfect of Diagnostics
+
+Separating recent infection from remote reactivation is compounded by the 
+limitations of available diagnostic tools for TB infection [@cohen2019;
+@chee2022; @pai2011a]. The two mainstays are the Tuberculin Skin Test (TST) and
+Interferon-Gamma Release Assays (IGRAs). Both tests have critical flaws for
+epidemiological use:
+
+*   They cannot distinguish active disease from latent infection [@chee2022]. A
+positive result indicates an immune response to TB antigens but does not
+clarify the clinical state of the individual.
+*   They cannot determine when an infection was acquired. A positive test in a
+60-year-old could reflect an infection from last year or from 50 years ago.
+*   They have low predictive value for progression. A positive test does not
+reliably identify which individuals among the latently infected will go on
+to develop active disease [@pai2011].
+- Their accuracy is compromised by confounders. The specificity of the TST is
+  poor in populations that have received the Bacille
+  Calmette-Guérin (BCG) vaccine, leading to false-positive results [@chee2022;
+  @cdc_ltbi_2023]. Conversely, the sensitivity of both TST and IGRAs can be
+  reduced in certain populations, including the immunocompromised (e.g.,
+  people with HIV), the very young, and the elderly, leading to false-negative
+  results [@chee2022].
+
+This diagnostic uncertainty creates problem for FOI estimation given that the
+prevalence is biased, noisy, and ambiguous. The lack of a test that can reliably
+identify and date the acquisition of LTBI is arguably the obstacle to accurately
+measuring the TB FOI [@chee2022].
+
+### Data Voids and Competing Hypotheses for Age Disparities
+
+In many of the highest-burden countries reliable and representative
+age-stratified data on LTBI prevalence are scarce [@houben2016; @cohen2019;
+@pai2011a]. While active TB is a nationally notifiable disease in most
+countries, LTBI is not, creating a major data void for the largest segment of
+the infected population [@cdc_ltbi_2023].
+
+A common epidemiological pattern observed in intermediate-burden settings is a
+disparity in active TB rates, with the burden being overwhelmingly
+concentrated in the elderly [@ragonnet2019; @lin2020]. Several competing
+mechanistic hypotheses have been proposed to explain this observation:
+1.  **The Cohort Effect:** posits that the high burden in the elderly is
+primarily an echo of the past. These individuals lived through a period of 
+higher transmission, acquired their infection, and are now
+presenting active disease [@lin2020].
+2.  **Immune Senescence:** suggesting that the weakening of the immune
+system with age (immune senescence) makes elderly individuals more susceptible
+to the reactivation of their latent infections [@lin2020].
+3.  **Age-Assortative Mixing:** the elderly have more frequent contact with
+other elderly individuals. This age-assortative mixing could sustain localized
+transmission chains within that age group, with limited spillover to younger
+populations [@lin2020].
+
+Cohort and immune senescence hypotheses suggest that a key intervention is to
+find and treat LTBI in the elderly to prevent reactivation. In contrast, the
+assortative mixing hypothesis would prioritize case finding and contact tracing
+among the elderly to interrupt ongoing transmission. These mechanisms are
+extremely difficult to disentangle using currently available data [@lin2020].
+
+Without additional data to constrain one of these parameters, the model cannot
+reliably distinguish between them. Longitudinal cohort studies that follow
+individuals over time to observe infection and reactivation events
+[@ragonnet2019], or novel diagnostic biomarkers that can differentiate recent
+from remote infection, are essential to break this non-identifiability and allow
+models to distinguish between these competing, and currently equally plausible,
+explanations.
+
+## Synthesis, Recommendations, and Future Horizons
+
+The estimation of the age-specific force of infection, a metric central to
+understanding and controlling infectious diseases, is a challenge whose nature
+varies with the biology, epidemiology, and clinical context of the pathogen in
+question. The case studies of COVID-19, HIV, and Tuberculosis illuminate a
+spectrum of distinct estimation problems, moving from the need for real-time
+tracking of a dynamic acute pandemic, to the deconvolution of a chronic disease
+history altered by treatment, to the fundamental ambiguity of a deeply latent
+infection. There is no one-size-fits-all approach to FOI estimation. The optimal
+method depends entirely on the specific problem at hand. The following table
+provides a comparative synthesis of the primary challenges, highlighting the
+distinct nature of the estimation problem for each disease.
+
+**Table 2: Disease-Specific Challenges in Estimating Age-Specific Force of Infection**
+
+| Challenge Category | COVID-19 | HIV | Tuberculosis (TB) |
+| :--- | :--- | :--- | :--- |
+| **Temporal Dynamics** | Extreme, rapid changes due to variants, interventions, and behavior, demanding real-time estimation. [@saadroy2022; @phac2022] | Slow, long-term evolution of a chronic epidemic, profoundly altered by the scale-up of ART. [@mahiane2022] | Very slow dynamics driven by demography and cohort effects reflecting transmission over the past century. [@lin2020] |
+| **Asymptomatic/Latent State** | High proportion of unobserved asymptomatic and presymptomatic transmission, with rates strongly dependent on age. [@gao2022; @lefrancais2022; @nande2021] | Long, variable, and infectious clinical latency period (years to decades) decouples prevalence from current incidence. [@wiki_hiv_2024] | Massive global reservoir of latent infection (LTBI) is the dominant state; active disease is a rare outcome. [@who2016; @cohen2019] |
+| **Impact of Intervention** | Complex and heterogeneous immunity from multiple vaccines, boosters, and infections, with rapidly waning protection. [@saadroy2022; @kissler2022] | ART fundamentally breaks the link between prevalence and infectivity (U=U), creating a treatment paradox. [@motta2024; @eisinger2019] | BCG vaccination confounds TST diagnostics; programmatic treatment of LTBI is limited in scale. [@chee2022; @cdc_ltbi_2023] |
+| **Diagnostic Uncertainty** | Difficulty ascertaining all infections due to asymptomatic cases; changing test performance with new variants. [@gostic2020; @nande2021] | High-quality diagnostics exist, but the primary challenge is reaching and testing undiagnosed individuals. [@hall2012; @girardi2007] | No "gold standard" test can distinguish latent vs. active disease, or recent vs. remote infection. [@pai2011; @chee2022] |
+| **Primary Data Limitation** | Reporting delays, changes in testing strategy, and ascertainment bias in a fast-moving pandemic. [@gostic2020; @gostic2020a] | Cross-sectional prevalence data reflects cumulative history, not current risk, requiring deconvolution. [@mahiane2022; @hallett2008] | Scarcity of age-stratified LTBI data; active case data conflates new infection with reactivation. [@houben2016; @lin2020] |
+| **Key Modeling Problem** | Real-time estimation under extreme non-stationarity and data uncertainty. [@birrell2021; @nash2022] | Deconvolution of infection history and the effects of treatment to avoid paradoxical interpretations. [@motta2024; @mahiane2022] | Parameter non-identifiability between competing mechanisms (cohort vs. reactivation vs. mixing). [@lin2020] |
+
+To overcome these challenges, the field of epidemiological modeling must
+continue to evolve, focusing on integration, flexibility, and the explicit
+treatment of uncertainty.
+
+*   **Develop Integrated Modeling Frameworks:** 
+models capable of simultaneously assimilating heterogeneous data streams.
+Frameworks that can jointly analyze serological surveys, case notifications,
+viral genomic sequences (to infer transmission chains), social contact data,
+and clinical records (e.g., vaccination status, treatment history, viral
+load) will provide a more holistic and robust picture of transmission
+dynamics [@birrell2021; @hay2004]. The SIRE model, which integrates genetic
+and epidemiological data, is an early example of this promising direction
+[@blower2020].
+*   **Create Models for a Complex Immunity Landscape:** 
+New frameworks are needed to efficiently model the continuum of
+susceptibility that results from a complex history of vaccination and
+infection. Models that incorporate variables for "infection age" and
+"vaccination age" may offer a path forward, allowing an individual's
+susceptibility and infectiousness to vary as a function of time since their
+last immunological event [@hadeler2022].
+*   **Address Non-Identifiability:** methodological research should focus on
+developing models that can formally compare competing hypotheses. Critically,
+these modeling efforts should be used to perform "value of information" analyses
+to identify which specific types of new data would be most effective at
+resolving the ambiguity between competing mechanisms.
+
+A recurring theme is the limitation of cross-sectional
+data. Public health agencies and research funders should prioritize investment
+in well-designed longitudinal cohort studies and serial serosurveys
+[@alexander2021; @alexander2021b; @hallett2008]. Following the same individuals
+over time provides direct information on seroconversion rates, allowing for more
+robust and direct estimation of the FOI and providing invaluable data for
+validating and calibrating complex models [@ferrari2008; @odriscoll2009].
+
+The challenges in TB estimation highlight the transformative potential of
+diagnostic innovation. The development of a widely deployable test that could
+reliably distinguish recent from remote TB infection would represent a paradigm
+shift. It would provide a direct measure of recent transmission, effectively
+resolving the central conundrum of TB FOI estimation and enabling far more
+effective targeting of public health interventions.
+
+It is crucial to recognize that FOI estimates subject to significant
+uncertainty. Models that quantify this uncertainty are more scientifically
+rigorous [@gostic2020; @alexander2021]. Public health decisions are better
+served by an understanding of the plausible range of transmission risk rather
+than a point estimate. Fostering a culture of transparently communicating this
+uncertainty is essential for building trust and making sound, risk-based policy.
+
+## References
+

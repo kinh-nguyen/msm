@@ -1,0 +1,150 @@
+library(flexsurv)
+set.seed(42)
+N <- 2500
+
+# --- True hazard parameters (unchanged) ---
+true_params <- list(
+  "1_to_2" = c(shape = 1.5, scale = 0.04), "1_to_3" = c(shape = 1.2, scale = 0.015),
+  "2_to_4" = c(shape = 2.0, scale = 0.15), "3_to_4" = c(shape = 1.8, scale = 0.09),
+  "4_to_2" = c(shape = 1.5, scale = 0.04), "4_to_3" = c(shape = 1.2, scale = 0.015)
+)
+
+# --- Simulation helpers (unchanged) ---
+rllogis_custom <- function(n, shape, scale) {
+  t <- (1 / scale) * (exp(rexp(n)) - 1)^(1 / shape)
+  return(t)
+}
+
+# --- Generate baseline data (unchanged) ---
+base_data <- data.frame(id = 1:N)
+base_data$current_age <- runif(N, 15, 49)
+base_data$afm <- rgamma(N, shape = 50, rate = 2.5)
+base_data <- base_data[base_data$afm < base_data$current_age, ]
+N <- nrow(base_data)
+base_data$id <- 1:N
+
+# --- Simulate to find the final state at current_age (unchanged) ---
+final_states <- vector("integer", N)
+for (i in 1:N) {
+  current_state <- 1
+  time_at_entry_age <- base_data$afm[i]
+  repeat {
+    if (current_state == 1) {
+      t_to_2 <- rllogis_custom(1, true_params$"1_to_2"["shape"], true_params$"1_to_2"["scale"])
+      t_to_3 <- rllogis_custom(1, true_params$"1_to_3"["shape"], true_params$"1_to_3"["scale"])
+      time_to_next_event <- min(t_to_2, t_to_3); next_state <- c(2, 3)[which.min(c(t_to_2, t_to_3))]
+    } else if (current_state == 2) {
+      time_to_next_event <- rllogis_custom(1, true_params$"2_to_4"["shape"], true_params$"2_to_4"["scale"]); next_state <- 4
+    } else if (current_state == 3) {
+      time_to_next_event <- rllogis_custom(1, true_params$"3_to_4"["shape"], true_params$"3_to_4"["scale"]); next_state <- 4
+    } else { # current_state == 4
+      t_to_2 <- rllogis_custom(1, true_params$"4_to_2"["shape"], true_params$"4_to_2"["scale"])
+      t_to_3 <- rllogis_custom(1, true_params$"4_to_3"["shape"], true_params$"4_to_3"["scale"])
+      time_to_next_event <- min(t_to_2, t_to_3); next_state <- c(2, 3)[which.min(c(t_to_2, t_to_3))]
+    }
+    age_at_next_event <- time_at_entry_age + time_to_next_event
+    if (age_at_next_event < base_data$current_age[i]) {
+      current_state <- next_state
+      time_at_entry_age <- age_at_next_event
+    } else {
+      final_states[i] <- current_state
+      break
+    }
+  }
+}
+
+# --- Create the final INTERVAL-CENSORED dataset ---
+msm_data_interval <- data.frame(
+  id = base_data$id,
+  time = base_data$current_age - base_data$afm, # Time since process start
+  status = factor(
+    final_states,
+    levels = 1:4,
+    labels = c("Married", "Divorced", "Widowed", "Remarried")
+  )
+)
+
+print(head(msm_data_interval))
+
+# Define the transition matrix for the model
+# Numbers map transitions to sets of parameters
+state_names <- c("Married", "Divorced", "Widowed", "Remarried")
+tmat <- matrix(NA, 4, 4, dimnames = list(state_names, state_names))
+
+# Transitions from Married (1) and Remarried (4) go to Divorced (2) and Widowed (3)
+# and share parameters.
+tmat[c("Married", "Remarried"), c("Divorced", "Widowed")] <- c(1, 2)
+tmat["Divorced", "Remarried"] <- 3
+tmat["Widowed", "Remarried"] <- 4
+
+print(tmat)
+
+# Fit the multi-state model on the interval-censored data
+fit_interval <- flexsurvreg(
+  Surv(time, status) ~ 1,
+  data = msm_data_interval,
+  trans = tmat,
+  dist = "llogis"
+)
+
+# This will correctly fit 4 separate log-logistic distributions
+# and estimate their parameters.
+print(fit_interval)
+
+library(msm)
+
+# Your interval-censored data is already in the right structure.
+# We just need to rename columns and ensure state is numeric.
+msm_data_fit <- data.frame(
+  subject = msm_data_interval$id,
+  time = msm_data_interval$time,
+  state = as.numeric(msm_data_interval$status)
+)
+
+# Define a Q matrix where shared integers indicate constrained parameters.
+Q_constrained <- rbind(
+  # To:    Married, Divorced, Widowed, Remarried
+  # From Married (1)
+  c(       0,        1,       2,        0),
+  # From Divorced (2)
+  c(       0,        0,       0,        3),
+  # From Widowed (3)
+  c(       0,        0,       0,        4),
+  # From Remarried (4)
+  c(       0,        1,       2,        0)
+)
+library(dplyr)
+
+# Your `msm_data_fit` data frame from the previous step is the starting point
+# It has one row per person at their survey time.
+
+# 1. Create a data frame of the initial states
+n_subjects <- length(unique(msm_data_fit$subject))
+start_states <- data.frame(
+  subject = 1:n_subjects,
+  time = 0,
+  state = 1  # Everyone starts in state 1 ("Married") at time 0
+)
+# 2. Combine the initial states with the snapshot observations
+msm_data_complete <- bind_rows(msm_data_fit, start_states) %>%
+  arrange(subject, time) # Sort by subject and time
+
+print(head(msm_data_complete, 4))
+
+# The data and Q matrix are correct from the previous steps.
+
+# 1. Define a vector of sensible initial values for the 4 transition rates.
+#    The order corresponds to the numbers in your Q matrix:
+#    q1=rate for M/R->D, q2=rate for M/R->W, q3=rate for D->R, q4=rate for W->R
+initial_rates <- c(0.1, 0.1, 0.1, 0.1)
+
+# 2. Fit the model, providing the manual initial values.
+fit_msm_final <- msm(
+  state ~ time,
+  subject = subject,
+  data = msm_data_complete,
+  qmatrix = Q_constrained,
+  pci = c(5, 10, 15, 20),
+  obstype = 1,
+  qinit = initial_rates #<-- Manually provide starting values
+)

@@ -131,6 +131,7 @@ hzf <- function(fname) {
     fun
 }
 
+plotl(x, hzf("WEI2")(x, mu = 15, sigma = .1))
 plotl(x, hzf("GB2")(x, mu = 15, sigma = 19, nu = 4, tau = 1)) # 
 # tau scale up and down
 # nu left to right
@@ -142,4 +143,26 @@ plotl(x, hzf("BCPE")(x, mu = 20, sigma = .3, nu = 1.2, tau = .9))
 # smaller nu moves right tail down
 # maller tau also moves right tail down
 plotl(x, hzf("BCPE")(x, mu = 20, sigma = .3, nu = 1.2, tau = .9)) 
+```
+
+```{r}
+plot(t, t/1^2)
+lines(t, t/10^2)
+
+library(flexsurv)
+
+## Compare generalized gamma fit with Weibull
+fitg <- flexsurvreg(formula = Surv(futime, fustat) ~ 1, data = ovarian, dist="gengamma")
+fitg
+fitw <- flexsurvreg(formula = Surv(futime, fustat) ~ 1, data = ovarian, dist="weibull")
+fitw
+plot(fitg)
+lines(fitw, col="blue", lwd.ci=1, lty.ci=1)
+## Identical AIC, probably not enough data in this simple example for a
+## very flexible model to be worthwhile.
+bexp <- flexsurvreg(Surv(years, status) ~ trans, data=bosms3, dist="exp")
+tmat <- rbind(c(NA,1,2),c(NA,NA,3),c(NA,NA,NA))
+# more likely to be dead (state 3) as time moves on, or if start with
+# BOS (state 2)
+pmatrix.simfs(bexp, t=5, trans=tmat)
 ```

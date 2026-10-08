@@ -22,33 +22,59 @@ Pull with `rdhs`
 
 ```{r adam, eval = F}
 library(rdhs)
-set_rdhs_config(
-    email = "k.nguyen@imperial.ac.uk",
-    project = "Global estimates of key populations adjusted for sexual debut data", 
-    password_prompt = T
-)
+# Login and cache settings come from code/rdhs.json (git-ignored, holds the
+# password). Read it with rdhs's own reader, which also turns the data_frame
+# setting into a function, and create the client from it. All rdhs calls below
+# are given this client explicitly, so the working directory does not matter.
+rdhs_cfg <- rdhs:::read_rdhs_config_file(here("code/rdhs.json"))
+stopifnot(is.character(rdhs_cfg$password), nzchar(rdhs_cfg$password))
+client <- client_dhs(config = rdhs_cfg, root = rdhs_cfg$cache_path)
+cat("rdhs:", rdhs_cfg$email, "| project:", rdhs_cfg$project, "| cache:", rdhs_cfg$cache_path, "\n")
 
-ssa <- dhs_countries(returnFields = c("CountryName", "DHS_CountryCode")) %>%
-    mutate(regionName = countrycode::countrycode(CountryName, "country.name", "un.regionsub.name")) %>%
-    filter(regionName == "Sub-Saharan Africa")
+# The 100 sub-Saharan surveys of the analysis (99 for women, ZM2002 men only).
+# The former query had no regional filter and pulled every country, India included.
+surveys <- readLines(here("code/surveys.txt"))
 
-datasets <- dhs_datasets(
-    ssa$DHS_CountryCode, 
-    surveyYearStart = 2000,
+# all formats of the recode files, so that a Stata file can stand in for a
+# flat file that rdhs cannot read
+all_ds <- dhs_datasets(
     surveyType = "DHS", 
-    fileFormat = "flat", 
-    fileType = c("IR", "MR")) %>%
-    mutate(sex = if_else(FileType == "Individual Recode", "female", "male"))
+    fileType = c("IR", "MR"),
+    client = client) %>%
+    filter(SurveyId %in% surveys) %>%
+    mutate(
+        fmt = toupper(substr(FileName, 7, 8)), # FL flat, DT Stata, SV SPSS, SD SAS
+        sex = if_else(FileType == "Individual Recode", "female", "male")
+    )
+datasets <- filter(all_ds, fmt == "FL")
+stopifnot(all(surveys %in% datasets$SurveyId))
 
-downloads <- get_datasets(datasets$FileName)
+# Some flat-file dictionaries (.DCF), mostly of French-language surveys, are
+# latin1. rdhs reads them with brio::read_lines, which marks every line as
+# UTF-8 whatever the locale, and the parser then stops with "input string is
+# invalid". For those surveys use the Stata file of the same recode, which
+# haven reads with its own encoding handling; the variables are the same.
+get_one <- function(fn) {
+    tryCatch(client$get_datasets(fn)[[1]], error = function(e) {
+        # file names differ in case (".zip", ".ZIP"), so match on the upper-case stem
+        stem <- toupper(sub("FL\\.ZIP$", "DT", fn, ignore.case = TRUE))
+        alt <- all_ds$FileName[toupper(sub("\\.ZIP$", "", all_ds$FileName, ignore.case = TRUE)) == stem]
+        if (length(alt) != 1) stop(fn, " could not be read and no single Stata file ", stem, " was found")
+        message(fn, " could not be read (", conditionMessage(e), "); using ", alt)
+        client$get_datasets(alt)[[1]]
+    })
+}
+downloads <- lapply(datasets$FileName, get_one) # same order as datasets
+datasets$used <- basename(unlist(downloads))
+datasets %>% count(fmt_used = if_else(grepl("DT", used, ignore.case = TRUE), "Stata", "flat"))
 ```
-
 
 ```{r dhs_pull}
 fid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('IR') %>% which()
 flookup <- c(
     weights = "v005", dob = "v011", doi = "v008", lab = "lab", afs = "v531", 
-    marriage_age = "v511", n_union = "v503", marital_status = "v501")
+    marriage_age = "v511", n_union = "v503", marital_status = "v501",
+    cluster = "v001", strata = "v022") # cluster and stratum, for the design effect
 
 o <- map_dfr(fid,
     function(x) {
@@ -66,7 +92,8 @@ saveRDS(o, here("data/femaleSSA.rds"))
 
 mid <- downloads %>% unlist() %>% basename() %>% substr(3, 4) %>% str_detect('MR') %>% which()
 mlookup <- c(weights = "mv005", dob = "mv011", doi = "mv008", lab = 'lab', 
-    afs = "mv531", marriage_age = "mv511", n_union = "mv503", marital_status = "mv501")
+    afs = "mv531", marriage_age = "mv511", n_union = "mv503", marital_status = "mv501",
+    cluster = "mv001", strata = "mv022")
 
 oo <- map_dfr(mid,
     function(x) {
@@ -105,7 +132,7 @@ ooo %>%
     mutate(
         n_union = haven::as_factor(n_union), 
         n_union = fct_recode(n_union, NULL = 'missing'),
-        age = round((doi - dob)/ 12), 
+        age = floor((doi - dob) / 12), # completed years, as v012 (was round)
         afs = if_else(afs > 90, NA_real_, afs), # inconsistent, unknown
         afs = if_else(is.na(afs) & marital_status == "never", 0, afs), # fix missing
         afs = if_else((afs == 0 | is.na(afs)) & marriage_age != 0 & marital_status != "never", marriage_age, afs), # missing afs but aam say otherwise
@@ -116,6 +143,7 @@ ooo %>%
     ) %>%
     filter(!(is.na(marriage_age) & is.na(afs))) %>%  # interim DHS does not have afs & aam, do they named differently
     filter(!is.na(marriage_age)) %>% # 225 had afs but not aam, can be done as censored but just removed here
+    filter(n_union != "oneORmore") %>% # 2,761 ever-married women with missing v503 dropped (assumed missing at random)
     saveRDS(here('data/cleaned.rds'))
 ```
 
@@ -124,18 +152,20 @@ Calculate needed indcator for likelihood
 ```{r likelihood_prep}
 library(haven)
 readRDS(here('data/cleaned.rds')) %>% 
-  select(lab, sex, afs, afm = marriage_age, dob, aai = age, u = n_union, ms = marital_status, weights) %>%
+  select(lab, sex, afs, afm = marriage_age, dob, aai = age, u = n_union, ms = marital_status,
+         weights, cluster, strata) %>%
   filter(weights != 0) %>%
-  group_by(lab) %>%
+  group_by(lab, sex) %>% # IR and MR files share the survey id, so normalise by sex as well
   mutate(
     weights = weights / 10^6, # https://www.dhsprogram.com/data/Guide-to-DHS-Statistics/index.htm#t=Analyzing_DHS_Data.htm&rhsearch=v005&rhhlterm=v005&rhsyns=%20
     n_eff = sum(weights)^2 / sum(weights^2), # effective sample size
     kish = weights * n_eff / sum(weights), # Kish weights
   ) %>%
   ungroup() %>%
-  select(-weights, -n_eff) %>%
+  select(-n_eff) %>%
   mutate(
     across(where(is.labelled), zap_labels),
+    ms = as.character(ms),
     id = 1:n(),
     cc = substr(lab, 1, 2),
     sv = substr(lab, 3, 6),
@@ -146,21 +176,73 @@ readRDS(here('data/cleaned.rds')) %>%
     ms = if_else(ms == "separated", "D", ms),
     ms = if_else(ms == "divorced", "D", ms),
     ms = if_else(ms == "widowed", "W", ms),
-    fit = case_when(
-      u == 'neverOnce' ~ 3,
-      u == 'once' & ms == 'M' ~ 3, # married and never move away
-      u == 'once' ~ 6,
-      otherwise ~ 7
+    # observed post-marriage cell (eight-state model): union order splits D and W
+    cell = case_when(
+      ms == "M" ~ "M",
+      ms == "R" ~ "R",
+      ms == "D" & u == "once" ~ "D1",
+      ms == "W" & u == "once" ~ "W1",
+      ms == "D" ~ "D2",
+      ms == "W" ~ "W2",
+      TRUE ~ NA_character_ # never married
     ),
     sex = if_else(sex == 'female', 'f', 'm'),
     yob = cmc_to_year(dob)
   ) %>% 
-  select(-lab, -dob) %>% 
+  select(-dob) %>% 
 allot(tmp)
+
+#' Design effect of the cluster sample, per survey and sex.
+#' deff_total from svymean for the post-marriage cells, age at marriage and age
+#' at first sex; it includes the effect of unequal weights, which the Kish
+#' weights already remove, so only the clustering part deff_total / deff_w is
+#' applied to the weights.
+library(survey)
+options(survey.lonely.psu = "adjust")
+deff_of <- function(d) {
+  if (nrow(d) < 200 || all(is.na(d$cluster))) return(NA_real_)
+  # one 0/1 indicator per post-marriage cell (NA for the never married), so that
+  # svymean never builds a factor, which fails when a survey has a single level
+  cells <- c("M", "D1", "W1", "R", "D2", "W2")
+  for (lv in cells) d[[paste0("c_", lv)]] <- as.numeric(d$cell == lv)
+  st <- if (any(is.na(d$strata))) NULL else ~strata
+  des <- svydesign(ids = ~cluster, strata = st, weights = ~weights, data = d, nest = TRUE)
+  em <- subset(des, !is.na(cell))
+  sx <- subset(des, !is.na(afs) & afs > 0)
+  # deff = "replace": compare with simple random sampling with replacement, so
+  # the Kish-scale weights (mean about 1) are not taken as a population size
+  dv <- function(f, ds) {
+    r <- try(svymean(f, ds, deff = "replace", na.rm = TRUE), silent = TRUE)
+    if (inherits(r, "try-error")) return(c(est = NA_real_, deff = NA_real_))
+    c(est = unname(coef(r)), deff = unname(deff(r)))
+  }
+  v <- c()
+  for (lv in cells) {
+    r <- dv(as.formula(paste0("~c_", lv)), em)
+    if (!is.na(r["est"]) && r["est"] >= 0.01) v <- c(v, r["deff"])
+  }
+  v <- c(v, dv(~afm, em)["deff"], dv(~afs, sx)["deff"])
+  median(v, na.rm = TRUE)
+}
+deffs <- tmp %>%
+  group_by(lab, sex) %>%
+  group_modify(~ tibble(
+    deff_total = deff_of(.x),
+    deff_w = nrow(.x) * sum(.x$weights^2) / sum(.x$weights)^2
+  )) %>%
+  ungroup() %>%
+  mutate(deff_clus = pmax(1, coalesce(deff_total / deff_w, 1)))
+write.csv(deffs, here("data", "deff.csv"), row.names = FALSE)
+deffs %>% summarise(across(starts_with("deff"), list(med = ~ median(.x, na.rm = TRUE), max = ~ max(.x, na.rm = TRUE))))
+
+tmp <- tmp %>%
+  left_join(select(deffs, lab, sex, deff_clus), by = c("lab", "sex")) %>%
+  mutate(kish = kish / deff_clus) %>%
+  select(-lab, -weights, -cluster, -strata, -deff_clus)
 
 # Too big the dataset, do sequential insteads
 cc <- unique(tmp$cc)
-dir.create(here("data/cc6"), F)
+dir.create(here("data/cc8"), F)
 
 parallel::mclapply(cc, function(i) {
 cat(i, '\n')
@@ -181,39 +263,55 @@ tmp %>%
       .x$XM = if_else(.x$afs < .x$afm, .x$afm, NA_real_)
     }
     if (!.y$neverwed) {
-      .x$MM = if_else(.x$ms == 'M', .x$afm + 1, NA_real_)
-      .x$MD = if_else(.x$ms == 'D', .x$afm + 1, NA_real_)
-      .x$MW = if_else(.x$ms == 'W', .x$afm + 1, NA_real_)
-      .x$MR = if_else(.x$ms == 'R', .x$afm + 1, NA_real_)
+      # one post-marriage episode per ever-married person, ending in the observed cell
+      .x$MM  = if_else(.x$cell == 'M',  .x$afm + 1, NA_real_)
+      .x$MD1 = if_else(.x$cell == 'D1', .x$afm + 1, NA_real_)
+      .x$MW1 = if_else(.x$cell == 'W1', .x$afm + 1, NA_real_)
+      .x$MR  = if_else(.x$cell == 'R',  .x$afm + 1, NA_real_)
+      .x$MD2 = if_else(.x$cell == 'D2', .x$afm + 1, NA_real_)
+      .x$MW2 = if_else(.x$cell == 'W2', .x$afm + 1, NA_real_)
     }
     .x
   }) %>% 
   ungroup() %>% 
   pivot_longer(
-    c(VV, VX, VM, XX, XM, MM, MD, MW, MR), 
+    any_of(c("VV", "VX", "VM", "XX", "XM", "MM", "MD1", "MW1", "MR", "MD2", "MW2")), 
     names_to = 'trans', values_to = 'start'
   ) %>% 
   drop_na(start) %>% 
-  select(-starts_with('never'), -u) %>% 
+  select(-starts_with('never'), -u, -ms, -cell) %>% 
   group_by(cc, sv, sex, id) %>% 
   mutate(
     end = if_else(row_number() == n(), aai, lead(start)),
     A = substr(trans, 1, 1),
-    Z = substr(trans, 2, 2),
+    Z = substr(trans, 2, nchar(trans)), # M, D1, W1, R, D2, W2 for post-marriage episodes
     d = end - start
   ) %>%
   ungroup() %>% 
   filter(!(start == end & A != 0)) %>% 
-  group_by(cc, sv, sex, fit, yob, aai, afs, afm, start, end, A, Z, d) %>% 
+  group_by(cc, sv, sex, yob, aai, afs, afm, start, end, A, Z, d) %>% # fit is now set per episode in run.r
   summarise(n = sum(kish), .groups = 'drop') %>%
-  write.csv(here("data/cc6", paste0(i, ".csv")), row.names = FALSE)
+  write.csv(here("data/cc8", paste0(i, ".csv")), row.names = FALSE)
 },
 mc.cores = 6
 ) %>% invisible()
 
-new_d <- vroom::vroom(list.files(here('data/cc6'), full.names = T), show_col_types = FALSE)
-bz2_file <- bzfile(here("data", "cc6.csv.bz2"))
+new_d <- vroom::vroom(list.files(here('data/cc8'), full.names = T), show_col_types = FALSE)
+bz2_file <- bzfile(here("data", "cc8.csv.bz2"))
 write.csv(new_d, bz2_file, row.names = FALSE)
+
+new_d <- vroom::vroom(here("data", "cc8.csv.bz2"))
+
+# share of each post-marriage cell, by survey and sex
+new_d %>% 
+  filter(A == 'M') %>% 
+  group_by(cc, sv, sex, Z) %>% 
+  summarise(n = sum(n), .groups = 'drop_last') %>% 
+  mutate(p = n / sum(n)) %>% 
+  ungroup() %>% 
+  ggplot(aes(cc, p, shape = sex, color = factor(sv))) +
+  geom_point() + 
+  facet_wrap(~Z, scales = 'free_y')
 
 # plot match data
 episodes <- vroom::vroom(here("data/new_dw.csv.bz2"), show_col_types = F)
@@ -244,11 +342,23 @@ allot(pd)
 
 write.csv(pd, bzfile(here("data", "pd.csv.bz2")), row.names = FALSE)
 
+# pd <- vroom::vroom(here("data", "pd.csv.bz2"))
 pd  %>% 
   filter(A=='X', Z =='M', sex == 'male') %>% 
   ggplot(aes(start, p_empirical)) +
-    geom_point(aes(color=sv), add.legend = FALSE) +
-    facet_wrap(~cc, scales = 'free_y')
+    geom_point(aes(color=sv), add.legend = FALSE) 
+    # facet_wrap(~cc, scales = 'free_y')
+
+library(mgcv, help, pos = 2, lib.loc = NULL)
+
+pd %>% 
+filter(A == 'X', Z == 'M', sex == 'male') %>%
+# filter(A == 'X', Z == 'M', cc == 'AO', sex == 'male') %>%÷
+mutate(age_grp = cut(start, seq(10, 50, 5))) %>%
+ggplot(aes(tx, p_empirical)) +
+  geom_point(aes(color=age_grp)) +
+  geom_smooth(aes(color=age_grp), se = F, formula = y ~ x, method = MASS::rlm)
+  facet_wrap(~age_grp)
 
 # stepwise empirical for MS MD MW
 hz_np <- function(fit_np) {
@@ -287,7 +397,7 @@ Mjs <- episodes %>%
   group_modify( ~ 
     {
       cat(paste0(.y[1, ], collapse = ', '), '\n')
-      purrr::map_dfr(c('S', 'D', 'W'), \(x) 
+      purrr::map_dfr(c('M', 'S', 'D', 'W'), \(x) 
       {
         .x %>%
           filter(A == 'M', fit != 7) %>% 

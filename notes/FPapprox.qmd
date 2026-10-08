@@ -1,0 +1,460 @@
+---
+title: "Fractional polynomial and sum of exponenential on continous space: application to hazard estimation."
+author:
+  - name: Văn Kính Nguyễn
+    id: vkn
+    email: kinh.nguyen@uni-heidelberg.de
+    affiliation:
+      - ref: 1
+affiliations: 
+  - id: 1
+    department: Heidelberg Institute for Global Health
+    name: Heidelberg University Hospital
+    city: Heidelberg
+    state: Baden-Würtenburg
+    country: Germany
+    address: Im Neuenheimer Feld 130/3
+    postcode: 69120
+    url: https://www.uni-heidelberg.de
+
+execute: 
+  cache: true
+  warning: false
+  error: false
+  include: false
+  echo: false
+
+editor:
+  render-on-save: true
+
+format:
+  elsevier-pdf:
+    journal:
+      name: "medArxiv"
+      formatting: preprint
+      model: 3p
+      layout: twocolumn
+    number-sections: false
+    mainfont: "Libertinus Serif"
+    sansfont: "Libertinus Sans"
+    monofont: "Libertinus Mono"
+    include-before-body:
+      text: |
+        \linenumbers
+    include-in-header: 
+      - /Users/knguyen/qmdheader.tex
+    # linestretch: 1
+    pagestyle: headings
+    fontsize: 11pt
+    indent: false
+    keep-tex: true
+
+bibliography: "/Users/knguyen/zotero.bib"
+latex-clean: true
+fig-dpi: 300
+abstract: > 
+  **Background** 
+  This paper details a continuous-time multistate model designed to analyze
+  transitions through various life course stages, including sexual debut,
+  marriage, marital dissolution (separation, divorce, widowhood), and
+  remarriage. The model incorporates age-dependent transition intensities and
+  allows for the inclusion of other covariates. We discuss the theoretical
+  underpinnings, model specification, calculation of transition matrices, and
+  the likelihood framework, particularly focusing on an approach suitable for
+  panel data where exact transition times for all states may not be observed.
+---
+
+# Introduction
+
+\noindent Fractional Polynomials (FPs) provides a parsimonious flexible smooth
+function for modeling non-linear relationship of continuous covariates
+[@royston1994]. An FP of degree $m$ for a predictor $x$ is defined as: 
+$$
+\phi_m(x) = \beta_0 + \sum_{j=1}^{m} \beta_j H_j(x)
+$$ 
+where 
+\begin{equation}\label{eq.fp.hx}
+H_j(x) =
+\begin{cases}
+x^{p_j} & \text{if } p_j \neq 0 \\
+\ln(x) & \text{if } p_j = 0 \\
+H_{j-1}(x)\ln(x) & \text{if } p_j = p_{j - 1}
+\end{cases}
+\end{equation}
+The selection of the best-fitting model involves a systematic search over the
+set of the defined powers, which is selected from a specific set $S = \{-2, -1,
+-0.5, 0, 0.5, 1, 2, 3\}$ using backward or forward search using information
+criteria such as Akaike or model deviance [@shkedy2006]. A more extensive set of
+powers were needed in practical application [@shkedy2006].
+
+The manual powers selection limit the application FPs into advanced statistical
+model, such as those require jointly estimation and integration of random
+effects through automatic differentiation
+[@kristensenTMBAutomaticDifferentiation2016]. In this space, approaches using
+splines are dominant despite its hurdle of knots selection and constraints
+specification to achieve the desired characteristics of a function [@kneib2008;
+@pya2015]. The FPs, however, could be a better candidate than splines when
+there is a hypothesis about the simpler global form of the function
+[@binder2013] compared to local characteristics of spline-based method, and when
+a parsimonious model and concise mathematical form is prefered for the problem
+at hand.
+
+To facilitate unrestricted parameter sampling space, instead of selecting powers
+from a discrete set, the polynomila terms can be defined as the solution to a
+differential equation whose parameters are continuous and unconstrained. This
+approach creates a smooth parameter space suitable for gradient-based samplers.
+
+The developed methods is compared against the standard fractional polynomial
+estimation and applied to dataset on the force of infection and hazard estimate 
+on survey and cross-sectional prevalence data.
+
+# Fractional polynomial order $m$
+
+\noindent The powers of an $m$-term polynomial are the roots of the
+characteristic equation for an $m$-th order homogeneous linear ordinary
+differential equation (ODE). With $t = \ln(x)$, the ODE is
+\begin{align}\label{eq.dfm}
+\frac{d^m f(t)}{dt^m} &+ c_{m-1} \frac{d^{m-1} f(t)}{dt^{m-1}} + \\ \nonumber
+  &\cdots + c_1 \frac{df(t)}{dt} + c_0 f(t) = 0.
+\end{align}
+In state-space form, $d\mathbf{y}/dt = \mathbf{A} \, \mathbf{y}$, where 
+$\mathbf{y} = [f, f', \dots, f^{(m-1)}]^T$ and $\mathbf{A}$ is
+the companion matrix for the characteristic polynomial. In the solution
+$\mathbf{y}(t) = e^{\mathbf{A}t}\mathbf{y}(0)$, the first row of the matrix
+exponential $e^{\mathbf{A}t}$ contains the model's $m$ basis functions, derived
+from solving the system with $m$ initial condition vectors. The parameters to be
+estimated are the $m$ coefficients of the polynomial.
+
+## Fractional polynomial order 2
+
+\noindent For a two-term fractional polynomial, $f(x) = \beta_1 x^{p_1} +
+\beta_2 x^{p_2}$, the \cref{eq.dfm} reduced to
+$$
+\frac{d^2 f(t)}{dt^2} + \gamma \frac{d f(t)}{dt} + \delta f(t) = 0.
+$$
+with $x^p = e^{pt}$. The powers $p_1$ and $p_2$ are the roots of the
+characteristic equation $r^2 + \gamma r + \delta = 0$ with behaviours depend on
+the discriminant $\Delta = \gamma^2 - 4\delta$. When $\Delta > 0$, the real,
+distinct roots yield the standard FP terms $\{x^{p_1}, x^{p_2}\}$. When 
+$\Delta = 0$, the repeated root $p$ also yields $\{x^p, x^p \ln(x)\}$ as defined
+by \cref{eq.fp.hx}.
+The extra behavior is when $\Delta < 0$, the complex conjugate roots $p = \alpha
+\pm i\omega$ yield an oscillatory basis $\{x^\alpha \cos(\omega\ln x),
+x^\alpha\sin(\omega \ln x)\}$. It is straightfoward to limit the system to 
+FP-like by reparameterizing $\gamma = -(p_1^* + p_2^*)$ and $\delta = p_1^* p_2^*$, 
+$p_1^*, p_2^* \sim N(0, \sigma^2)$.
+Solving the ODE with the state vectors $\mathbf{y} = [f, f']^T$ and system
+matrix
+$\mathbf{A} =\bigl(\begin{smallmatrix}
+0 & 1\\
+-\delta & -\gamma
+\end{smallmatrix}\bigr)$
+using initial conditions $[1, 0]^T$ and $[0, 1]^T$, we obtain the two 
+basis function which are the top row of the matrix exponential
+$e^{\mathbf{A}t}$.
+
+## Sum of exponential
+
+The FP are limited to $x > 0$, for a predictor that spans on $t^* \in (-\infty,
++\infty)$, the function $f(t^*)$ is the solution to the same ODE \cref{eq.dfm},
+but the model is no longer a fractional polynomial but a sum of exponentials
+model that can capture exponential growth, decay, or saturation effects. For a
+second-order model, the bases would be $e^{p_1 t^*}$ and $e^{p_2 t^*}$
+for distinct real roots, $e^{p t^*}$ and $t^*e^{p t^*}$ for repeated real roots,
+and $e^{\alpha t^*} \cos(\omega t^*)$ and $e^{\alpha t^*} \sin(\omega t^*)$
+for complex roots. The two basis functions, $B_1(t)$ and $B_2(t)$, can also be
+found from the top-row elements of the matrix exponential, $\exp(\mathbf{A}t)$.
+Analytical solution for these basis functions are available.
+
+```{=html}
+<!-- #### The DFP-2 Model Pseudo-code:
+1.  **Parameters**: Define unrestricted parameters $\beta_0, \beta_1, \beta_2, \gamma, \delta$.
+2.  **State-Space Formulation**: For each observation's predictor value $x_i$:
+    * Calculate the log-transformed variable $t_i = \ln(x_i)$.
+    * Construct the dynamics matrix $\mathbf{A} = \begin{pmatrix} 0 & 1 \\ -\delta & -\gamma \end{pmatrix}$.
+    * Compute the solution matrix $\mathbf{S}_i = e^{\mathbf{A} t_i}$ using a numerically stable matrix exponential function.
+3.  **Basis Functions**: Extract the basis function values from the solution matrix:
+    * $B_{1,i} = \mathbf{S}_{i,11}$
+    * $B_{2,i} = \mathbf{S}_{i,12}$
+4.  **Linear Predictor**: Construct the final model:
+    * $\eta_i = \beta_0 + \beta_1 B_{1,i} + \beta_2 B_{2,i}$ -->
+```
+
+This code simulates data from a known DFP-2 process, builds the model in TMB, fits it using R's `optim` function, and finally compares the result to a standard fractional polynomial fit from the `mfp` package.
+
+### 1. TMB Model: `dfp2.cpp`
+
+First, save the following C++ code in a file named `dfp2.cpp`. This file defines the model likelihood. It uses the Eigen library's matrix exponential function, which smoothly and robustly solves the underlying differential equation for any parameter values.
+
+### 2. R Script: Simulation, Fitting, and Comparison
+
+Now, run the following R script. It will install necessary packages, simulate the data, compile and run the TMB model, and plot the results.
+
+```{r}
+#| eval: false
+# Step 0: Install and load necessary packages
+if (!requireNamespace("TMB", quietly = TRUE)) install.packages("TMB")
+if (!requireNamespace("expm", quietly = TRUE)) install.packages("expm")
+if (!requireNamespace("mfp", quietly = TRUE)) install.packages("mfp")
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+if (!requireNamespace("tidyr", quietly = TRUE)) install.packages("tidyr")
+
+library(TMB)
+library(expm)
+library(mfp)
+library(ggplot2)
+library(tidyr)
+
+
+# Step 1: Simulate Data from a known DFP-2 process
+# ===================================================
+set.seed(42)
+n_obs <- 150
+
+# True parameters
+true_params <- list(
+  beta0 = 1.5,
+  beta1 = 0.8,
+  beta2 = -2.0,
+  gamma = -1.0,
+  delta = -2.0,
+  sigma = 0.4
+)
+
+# With gamma=-1 and delta=-2, the discriminant is (-1)^2 - 4*(-2) = 9 > 0.
+# The corresponding powers are p = (-(-1) +/- sqrt(9))/2 => p1=2, p2=-1.
+# So our true model is analogous to a mix of x^2 and x^-1.
+
+# Generate predictor variable
+x_sim <- runif(n_obs, 0.5, 8)
+
+# Generate response using the DFP-2 logic
+A_true <- matrix(c(0, -true_params$delta, 1, -true_params$gamma), 2, 2)
+t_sim <- log(x_sim)
+
+# Calculate basis functions for each observation
+basis_vals <- t(sapply(t_sim, function(t) {
+  S <- expm(A_true * t)
+  c(B1 = S[1, 1], B2 = S[1, 2])
+}))
+
+# Calculate true mean and simulate observed y
+eta_true <- true_params$beta0 + 
+            true_params$beta1 * basis_vals[, "B1"] + 
+            true_params$beta2 * basis_vals[, "B2"]
+y_sim <- eta_true + rnorm(n_obs, mean = 0, sd = true_params$sigma)
+
+sim_data <- data.frame(x = x_sim, y = y_sim)
+
+# Step 2: Compile and Fit the DFP-2 model using TMB
+# ===================================================
+
+# Compile the C++ model
+getwd()
+compile("notes/dfp2.cpp")
+dyn.load(dynlib("code/dfp2"))
+
+# Set up data and initial parameter list for TMB
+data_list <- list(y = y_sim, x = x_sim)
+param_list <- list(
+  beta0 = 0, beta1 = 0, beta2 = 0,
+  gamma = 0, delta = 0,
+  log_sigma = 0
+)
+
+# Create TMB objective function
+obj <- MakeADFun(data = data_list, parameters = param_list, DLL = "dfp2", silent = TRUE)
+
+# Optimize the model
+opt <- optim(par = obj$par, fn = obj$fn, gr = obj$gr, method = "BFGS", control=list(maxit=1000))
+
+# Get final parameter estimates and standard errors
+sd_report <- sdreport(obj)
+param_estimates <- summary(sd_report, "fixed")[, "Estimate"]
+print("DFP-2 Parameter Estimates:")
+print(param_estimates)
+
+
+# Step 3: Fit a standard Fractional Polynomial model
+# ===================================================
+fit_mfp <- mfp(y ~ fp(x), data = sim_data)
+
+print("Standard MFP Fit:")
+print(fit_mfp)
+
+
+# Step 4: Compare the fits visually
+# ==================================
+
+# Create a grid of x-values for prediction
+x_pred_grid <- seq(min(x_sim), max(x_sim), length.out = 200)
+
+# 1. Predict from the fitted DFP-2 model
+A_fit <- matrix(c(0, -opt$par["delta"], 1, -opt$par["gamma"]), 2, 2)
+t_pred <- log(x_pred_grid)
+basis_pred <- t(sapply(t_pred, function(t) {
+  S <- expm(A_fit * t)
+  c(B1 = S[1, 1], B2 = S[1, 2])
+}))
+y_pred_dfp2 <- opt$par["beta0"] + 
+               opt$par["beta1"] * basis_pred[, "B1"] + 
+               opt$par["beta2"] * basis_pred[, "B2"]
+
+# 2. Predict from the standard MFP model
+y_pred_mfp <- predict(fit_mfp, newdata = data.frame(x = x_pred_grid))
+
+# 3. Get the true curve
+y_true <- true_params$beta0 + 
+          true_params$beta1 * basis_vals[, "B1"] + 
+          true_params$beta2 * basis_vals[, "B2"]
+
+# Combine all data for plotting with ggplot2
+plot_data <- data.frame(
+    x = x_pred_grid,
+    DFP2 = y_pred_dfp2,
+    MFP = y_pred_mfp,
+    True = predict(smooth.spline(x_sim, eta_true), x_pred_grid)$y # Use spline for smooth true curve
+) %>% pivot_longer(cols = -x, names_to = "Model", values_to = "y_pred")
+
+
+# Generate the plot
+ggplot(sim_data, aes(x = x, y = y)) +
+  geom_point(alpha = 0.6, color = "grey40", shape = 21) +
+  geom_line(data = plot_data, aes(x = x, y = y_pred, color = Model, linetype = Model), size = 1) +
+  scale_color_manual(values = c("DFP2" = "blue", "MFP" = "forestgreen", "True" = "red")) +
+  scale_linetype_manual(values = c("DFP2" = "dashed", "MFP" = "solid", "True" = "dotted")) +
+  labs(
+    title = "DFP-2 vs. Standard Fractional Polynomial",
+    subtitle = "DFP-2 recovers the true data generating process accurately.",
+    x = "Predictor (x)",
+    y = "Response (y)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+```
+
+You'll see that the DFP-2 and MFP fits are virtually identical, and both lie almost perfectly on top of the true curve. This demonstrates that the DFP-2 is a valid and powerful reparameterization of the fractional polynomial concept, offering the significant advantage of a continuous, unconstrained parameter space.
+
+<!-- $r^2 +
+\gamma r + \delta = 0$, which are determined by the discriminant $\Delta =
+\gamma^2 - 4\delta$ with analytical solution available.
+Distinct Real Roots** ($\Delta \> 0$): The roots are $p_1, p_2 = (-\gamma \pm \sqrt{\Delta})/2$.
+$$\begin{aligned}
+B_1(t) &= \frac{p_1 e^{p_2 t} - p_2 e^{p_1 t}}{p_1 - p_2} \\
+B_2(t) &= \frac{e^{p_1 t} - e^{p_2 t}}{p_1 - p_2}
+\end{aligned}
+$$
+2.  **Repeated Real Roots** ($\\Delta = 0$): The single root is $p = -\\gamma/2$.
+    $$
+    $$$$\\begin{aligned}
+    B_1(t) &= (1 - pt)e^{pt} \\
+    B_2(t) &= t e^{pt}
+    \\end{aligned}
+    $$
+3.  **Complex Conjugate Roots** ($\\Delta \< 0$): The roots are $p = \\alpha \\pm i\\omega$, where $\\alpha = -\\gamma/2$ and $\\omega = \\sqrt{-\\Delta}/2$.
+
+    $$
+    \begin{aligned}
+    B_1(t) &= e^{\\alpha t} \\left(\\cos(\\omega t) - \\frac{\\alpha}{\\omega}\\sin(\\omega t)\\right) \\
+    B_2(t) &= e^{\\alpha t} \\left(\\frac{1}{\\omega}\\sin(\\omega t)\\right)
+    \\end{aligned}
+    $$
+    Any linear combination of these two basis functions spans the solution space. For example, in the distinct roots case, the simpler basis ${e^{p_1 t}, e^{p_2 t}}$ is often used. However, the forms above are the direct result of applying $\\exp(\\mathbf{A}t)$ to the elementary initial condition vectors. -->
+
+<!-- ### Pseudocode
+
+This function calculates the two basis vectors given the ODE parameters and the predictor values.
+
+```
+function generate_basis_functions(gamma, delta, t_vector) {
+  // B will be a matrix where columns are the basis vectors
+  B = matrix(length(t_vector), 2);
+  
+  discriminant = gamma^2 - 4 * delta;
+  
+  if (discriminant > 1e-8) { // Case 1: Distinct Real Roots
+    p1 = (-gamma + sqrt(discriminant)) / 2;
+    p2 = (-gamma - sqrt(discriminant)) / 2;
+    
+    // Using a simpler, more stable basis spanning the same space
+    B[,1] = exp(p1 * t_vector);
+    B[,2] = exp(p2 * t_vector);
+
+  } else if (discriminant < -1e-8) { // Case 3: Complex Roots
+    alpha = -gamma / 2;
+    omega = sqrt(-discriminant) / 2;
+    
+    B[,1] = exp(alpha * t_vector) * cos(omega * t_vector);
+    B[,2] = exp(alpha * t_vector) * sin(omega * t_vector);
+  
+  } else { // Case 2: Repeated Real Roots
+    p = -gamma / 2;
+    
+    B[,1] = exp(p * t_vector);
+    B[,2] = t_vector * exp(p * t_vector);
+  }
+  
+  return B;
+}
+``` -->
+
+## Test functional form of FP
+
+```{r, eval=FALSE}
+library(mfp)
+library(dplyr)
+startx <- 1:80
+d <- vroom::vroom('./data/pd.csv.bz2')
+Mjs <- vroom::vroom(here('data', 'mjs.csv'))
+
+dx = d %>% filter(sex == 'male', A == 'V', Z == 'M')
+
+fit_mfp <- mfp(log(p_empirical) ~ fp(I(log(start)), scale = FALSE), data = dx)
+y_pred_mfp <- predict(fit_mfp, newdata = tibble(start = startx))
+
+# fit_mfp <- mfp(log(p_empirical+1e-12) ~ fp(I(log(start)), scale = FALSE), data = dD)
+fit_mfp <- mfp(log(p_empirical+1e-12) ~ fp(((start)), scale = FALSE), data = dD)
+fit_mfp <- mfp((p_empirical) ~ fp(((start)), scale = FALSE), data = dD)
+y_pred_mfp <- predict(fit_mfp, newdata = tibble(start = startx))
+
+library(TMB, help, pos = 2, lib.loc = NULL)
+compile("notes/dfp2.cpp")
+dyn.load(dynlib("code/dfp2"))
+
+# Set up data and initial parameter list for TMB
+data_list <- list(y = log(dx$p_empirical), x = dx$start)
+param_list <- list(
+  beta0 = 0, beta1 = 0, beta2 = 0,
+  p1 = 0, p2 = 0,
+  log_sigma = 0
+)
+
+# Create TMB objective function
+obj <- MakeADFun(data = data_list, parameters = param_list, DLL = "dfp2", silent = FALSE)
+
+# Optimize the model
+opt <- nlminb(obj$env$last.par.best, obj$fn, obj$gr, control=list(maxit=1000))
+opt
+(rp <- obj$report())
+# Get final parameter estimates and standard errors
+(sd_report <- sdreport(obj))
+
+x_pred_grid <- 1:80
+
+# 1. Predict from the fitted DFP-2 model
+
+A_fit <- matrix(c(0, -rp$delta, 1, -rp$gamma), 2, 2)
+t_pred <- log(x_pred_grid)
+basis_pred <- t(sapply(t_pred, function(t) {
+  S <- expm::expm(A_fit * t)
+  c(B1 = S[1, 1], B2 = S[1, 2])
+}))
+y_pred_dfp2 <- rp$beta0 + 
+               rp$beta1 * basis_pred[, "B1"] + 
+               rp$beta2 * basis_pred[, "B2"]
+lines(x_pred_grid, (y_pred_dfp2), col = 4, lwd= 2)
+plot(dx$start, dx$p_empirical, xlim = c(0, 80))
+plot(log(dx$start), log(dx$p_empirical))
+lines(log(x_pred_grid), (y_pred_dfp2), col = 2)
+```

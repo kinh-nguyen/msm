@@ -1,0 +1,36 @@
+---
+title: "GB2"
+format: 
+  html:
+    fig-width: 4
+    fig-height: 3
+---
+
+```{r}
+library(dplyr)
+library(gamlss)
+x <- seq(1, 80, 1)
+hzf <- function(fname) {
+    dfun <- paste0("d", fname)
+    pfun <- paste0("p", fname)
+    pdf <- eval(parse(text = dfun))
+    cdf <- eval(parse(text = pfun))
+    fun <- function(...) {
+      lpt <- log(pdf(...))
+      lst <- log(1 - cdf(..., lower.tail = TRUE, log = FALSE))
+      exp(lpt - lst)
+    }
+    fun
+}
+
+a <- tidyr::crossing(
+  mu = 20,
+  sigma = 2 + runif(20, -1.5, 10),
+  nu = 1 + runif(20, -.9, 20),
+  tau = 1 + runif(20, -.9, 20),
+)
+a
+for (i in 7000+1:1000) {
+  print(plot(x, hzf("GB2")(x, mu = a$mu[i], sigma = a$sigma[i], nu = a$nu[i], tau = a$tau[i]), type = "l", main = i, xlab = '', ylab = ''))
+}
+```

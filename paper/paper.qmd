@@ -43,6 +43,8 @@ editor:
   render-on-save: true
 
 format:
+  html:
+    toc: true
   elsevier-pdf:
     journal:
       name: "medArxiv"
@@ -130,7 +132,7 @@ population size and dynamic models for epidemic modelling and assessments.
 
 # Materials & Methods
 
-\noindent We developed a parametric semi-Markov multistate survival model (MSM)
+We developed a parametric semi-Markov multistate survival model (MSM)
 to estimate the transition rates between marital statuses since birth till the
 age of interview. A reparameterized four parameters log-Sinh-arcsinh (lnSHASH)
 baseline hazard was implemented to permit variations in the tails across
@@ -220,11 +222,11 @@ decreasing in risk after an initial peak, We opted for the flexible Sinh-arcsinh
 distribution [@jones2009] and reparameterized to have a positive support for
 modelling time (age). The density function reads as
 $$
-f(x|\mu, \sigma, \nu, \tau) =
-\phi(r) c x^{-1} \sigma^{-1} (1 + z^2)^{-0.5}
+f(t|\mu, \sigma, \nu, \tau) =
+\phi(r) c t^{-1} \sigma^{-1} (1 + z^2)^{-0.5}
 $$
 where
-$z = (\log x - \mu)\sigma^{-1}\tau^{-1}$, 
+$z = (\log t - \mu)\sigma^{-1}\tau^{-1}$, 
 $\gamma =  \tau \log(z + (1 + z^2)^{-.5}) - \nu$, $r = \sinh(\gamma)$, 
 $c = \cosh(\gamma)$,
 and $\phi(r)$ is the standard normal probability distribution function. The
@@ -241,7 +243,7 @@ of age at interview, i.e.,
 $$
 \tau_{ij,sk} = \exp (\zeta_{ij,s,k} + \zeta_{ij,s,k} \cdot\text{aai})
 $$
-where *aai* is the standardized age at interview. We compared with EPLD
+where *aai* is the standardized age at interview. We compared models with EPLD
 [@vehtariPracticalBayesianModel2017] criteria.
 
 For the XM transition, we model the proportional effect of time since sexual
@@ -251,15 +253,30 @@ $$
 $$
 where $t_x$ are time since sexual debut.
 
-For dissolution transitions, the data is sparse and interval-censored.
-Estimating the empirical risk with the actuarial (life‑table) estimator
+For dissolution transitions, the data is sparse and all are interval-censored.
+Emprical estimate using the actuarial (life‑table) estimator
 [@turnbull1976] suggested a small and log-linear hazard of over age. Thus we
-reduced the model and fitted a Gompertz hazard as
+reduced the hazard model for these states and and fitted a Weibull hazard of
+time since marriage $s$, 
+$W(s|\mu,\sigma, t), \mu>0, \sigma>0$, as
 $$
-\lambda_{3j} = \exp(\beta_{3j} + \theta_{3j} t_m + \phi_{3j} \text{afm}).
+\lambda_{3j}(age, s) = \sigma s^{\sigma-1}\mu^{-\sigma}\gamma^{\sigma}
 $$
-which is equivalent to a proportional hazard effect of the during since
-marriage.
+where $\gamma = \Gamma(1 + 1/\sigma)$ and the mean is modelled as a function of
+age.
+$$
+\log\mu = \beta_0 + \beta_1 age 
+$$
+
+```c++
+DATA_MATRIX(X_mu);
+PARAMETER_VECTOR(beta_mu);
+PARAMETER(log_sigma);
+Type sigma = exp(log_sigma);
+vector<Type> mu = exp(X_mu * beta_mu);
+Type gamma_val = gamma(1.0 + 1.0/sigma);
+h = sigma * pow(y(i), sigma - 1.0) * pow(gamma_val / mu(i), sigma);
+```
 
 For each sex ($s$), and across countries ($k$), the four parameters are assumed
 to vary around a global mean, e.g., $\mu_{ij,s,k} = \mu_{ij,s} + c_{ij,s,k}$,
@@ -294,127 +311,6 @@ repository [kinh-nguyen/msm](https://github.com/kinh-nguyen/msm).
 
 # Results
 
-```{r}
-library(ktools)
-# install.packages("expm")
-# install.packages("TMB")
-# install.packages("elementalist")
-# install.packages("ggh4x")
-# library("expm")
-# remotes::install_github('kaskr/adcomp/TMB')
-library("TMB")
-library(icenReg)
-library(ggh4x)
-# remotes::install_github("teunbrand/elementalist")
-library(elementalist)
-k.legend <- function(x = .8, y = 1, dir = "horizontal", size = 0.25) {
-    theme(
-        legend.position = c(x, y),
-        legend.direction = dir,
-        legend.key.size = unit(size, "cm"),
-        legend.title = element_text(size = 9),
-        legend.box.background = element_rect_round(fill = "white", color = "grey90", radius = unit(0.2, "snpc"))
-    )
-}
-hz_np <- function(fit_np) {
-  df <- data.frame(
-    time = fit_np$T_bull_Intervals[2, ],
-    p_mass = fit_np$p_hat
-  )
-  agg_data <- aggregate(p_mass ~ time, data = df, FUN = sum)
-  surv_prob <- 1 - cumsum(agg_data$p_mass)
-  surv_estimates <- data.frame(
-    time = c(0, agg_data$time),
-    surv_prob = c(1, surv_prob)
-  )
-  n <- nrow(surv_estimates)
-  hz_df <- data.frame(
-    interval_start = surv_estimates$time[-n],
-    interval_end = surv_estimates$time[-1],
-    S_t_prev = surv_estimates$surv_prob[-n],
-    S_t_curr = surv_estimates$surv_prob[-1]
-  )
-  hz_df$duration <- hz_df$interval_end - hz_df$interval_start
-  valid_rows <- hz_df$duration > 0 & hz_df$S_t_prev > 0
-  hz_df <- hz_df[which(valid_rows), ]
-  hz_df$hazard_rate <- (hz_df$S_t_prev - hz_df$S_t_curr) / (hz_df$S_t_prev * hz_df$duration)
-  return(
-    data.frame(
-      interval_start = hz_df$interval_start,
-      interval_end = hz_df$interval_end,
-      hazard_rate = hz_df$hazard_rate
-    )
-  )
-}
-```
-
-```{r, loadata}
-state_order <-c("V", "X", "M", "S", "D", "W", "R")
-full_d <- vroom::vroom(here("data/cc.csv.bz2"))
- 
-full_d %>% 
-  filter(cc == "CG") %>% 
-  mutate(
-    A = match(A, state_order) - 1, 
-    Z = match(Z, state_order) - 1, 
-    fit = case_when(A < 2 ~ 3, otherwise ~ fit), 
-    yob = scale(yob), 
-    tx = start - afs, 
-    tm = start - afm
-  ) %>% 
-  select(A, Z, yob, afm, aai, start, end, tx, tm, n, fit) %>%
-  mutate(
-    tx = if_else(tx < 0 | is.na(tx), 0, tx),
-    tm = if_else(tm < 0 | is.na(tm), 0, tm),
-    dstart = as.double(start),
-    istart = start,
-    aai = scale(aai)
-  ) %>%
-  filter(dstart > 0) %>%
-  allot(tdt)
-```
-
-```{r}
-# predicting data by age for average duration of tx and tm
-tdt %>%
-  filter(A == 1 | A == 2) %>%
-  group_by(start) %>%
-  summarise(
-    tx = mean(tx),
-    tm = mean(tm),
-    .groups = "drop"
-  ) %>% 
-  bind_rows(
-    anti_join(tibble(
-      start = 1:(max(tdt$end) + 1),
-      tx = 0, tm = 0,
-    ), ., by = "start")
-  ) %>%
-  arrange(start) %>%
-allot(sim_data)
-```
-
-```{r, prepmodelfit}
-N_PAR = 7
-data <- list()
-data$n_age <- max(tdt$end) + 1 # include zero
-data$sim_data = as.matrix(sim_data)
-
-data <- modifyList(data, as.list(tdt))
-
-init <- list(
-  mu = c(2.6, 2.8, 2.9, 2.7, 2.7, 2.7, 2.7),
-  log_sigma = c(-2, -2, .1, -2, -2, -2, -2),
-  log_nu = c(.5, -2, -1, -2, -2, -2, -2),
-  log_tau = c(-2, -.5, .8, -2, -2, -2, -2),
-  tau_aai = c(-.04, -.05, -.2, -.05, -.05, -.05, -.05),
-  b_tx = c(-0.03),
-  b_tm = c(-0.03),
-  itc = c(3, -.5, 2, 3, 3, 3, 3)
-)
-str(init)
-```
-
 We computed the 1-year transition probabilities by age for the different marital
 statuses, $P(S_{t+1} = s | S_{t} = r)$, starting with virgin at birth, i.e., the
 probabilities of transitioning from virgin to sexual debut or to married, and
@@ -425,109 +321,8 @@ in the same state, the complimentary probability, are also shown.
 @fig-fittedExample shows that the fitted probabilities are close to the
 empirical estimates. 
 
-```{r}
-#| label: fig-fittedExample
-#| fig-cap: Estimated and empirical conditional 1-year transition probabilities from currently virgin or currently sexually debuted by age. Only these transitions can be defined from survey data and have empirical estimates, which are showed as points with size relative to the population-at-risk in the previous age. Lines are the fitted probabilities from our model.
-#| include: true
-#| fig-env: "figure*"
-#| fig-pos: "!ht"
-#| fig-width: 7
-#| fig-height: 4
-#| out-width: "100%"
-rp <- readRDS(here('fit/testMW.rds'))
-str(rp)
-P_yearly = rp$PP
-
-pe = tibble(
-  start = 1:dim(P_yearly)[3],
-  VV = P_yearly[1,1,],
-  VX = P_yearly[1,2,],
-  VM = P_yearly[1,3,],
-  XX = P_yearly[2,2,],
-  XM = P_yearly[2,3,],
-) %>% 
-pivot_longer(-start)
-
-tdt %>%
-  filter(A < 2, Z <= 2) %>%
-  group_by(A, start, tx) %>%
-  summarise(n_risk = sum(n), .groups = "drop") %>%
-  allot(at_risk)
-
-tdt %>%
-  filter(A < 2, Z <= 2) %>%
-  group_by(A, Z, start, tx) %>%
-  summarise(n_move = sum(n), .groups = "drop") %>%
-  left_join(at_risk, by = c("A", "start", "tx")) %>%
-  mutate(p_empirical = n_move / n_risk) %>% 
-  mutate(
-    A = case_when(A == 0 ~ 'V', A == 1 ~ 'X', A == 2 ~ "M", A == 3 ~ "S", A == 4 ~ "D", A == 5 ~ "W", A == 6 ~ 'R', otherwise ~ NA_character_),
-    Z = case_when(Z == 0 ~ 'V', Z == 1 ~ 'X', Z == 2 ~ "M", Z == 3 ~ "S", Z == 4 ~ "D", Z == 5 ~ "W", Z == 6 ~ 'R', otherwise ~ NA_character_),
-    name = paste0(A,Z)) %>% 
-  full_join(pe, by = c("start", "name")) %>% 
-allot(pd)
-
-pd %>%
-  mutate(group = case_when(
-    A == "V" ~ 1,
-    A == "X" ~ 2,
-    A == "M" ~ 3,
-  ), 
-    p_empirical = ifelse(A == "M", NA_real_, p_empirical),
-  ) %>%
-  filter(A != "M") %>%
-  filter(start > 0) %>% 
-  ggplot(aes(start, p_empirical)) +
-  geom_point(aes(size = n_risk, color = factor(name)), shape = 21) +
-  geom_line(aes(y = value, color = factor(name))) +
-  ggh4x::facet_grid2(
-    cols = vars(group),
-    scales = "free_y",
-    labeller = labeller(group = function(x) {
-      recode(x, `1` = "Currently virgin", `2` = "Current sexual debuted", `3` = "Currently married")
-    })
-  ) +
-  scale_y_continuous(labels = scales::percent, breaks = seq(0, 1, .1)) +
-  guides(size = FALSE) +
-  labs(x = 'Age', y = 'Transition probability', color = 'Transition') +
-  k.theme + k.legend(.925, .5, dir = "vertical")
-```
-
 ::: {#ref}
 :::
 
 # Appendix
 
-```{r}
-#| label: fig-exampleHazard
-#| fig-cap: Illustration of the Log-logistic base hazard with exponential decay (EDLL) hazard function for $\lambda = \exp(8)$, $\beta = 2.5$, $\delta = 0.01$, and $k = 0.1875$. The hazard is defined as $h(t; \lambda, \beta, \delta, k) = \frac{\beta t^{\beta-1}}{(\lambda + t^\beta)(1+\delta e^{kt})}$. 
-#| include: true
-#| fig-env: "figure*"
-#| fig-pos: "!ht"
-#| fig-width: 7
-#| fig-height: 5
-#| out-width: "80%"
-
-lambda <- exp(8)
-beta   <- 2.5
-delta  <- 0.01
-k_val  <- 0.1875 
-
-# Log-hazard
-# h(t) = (beta * t^(beta-1)) / ((lambda + t^beta) * (1 + delta * exp(k*t)))
-log_h_t_calculator <- function(t, lambda, beta, delta, k) {
-  logspace_add <- function(logx, logy) 
-    pmax(logx, logy) + log1p(exp(-abs(logx - logy)))
-  log_denom1 <- logspace_add(log(lambda), beta * log(t))
-  log_denom2 <- logspace_add(0, log(delta) + k * t)
-  log(beta) + (beta - 1) * log(t) - log_denom1 - log_denom2
-}
-
-log_h_t_calculator(1:50, lambda, beta, delta, k_val) %>%
-  exp() %>%
-  plot(1:50, .,
-    type = "l",
-    xlab = "Time (t)", ylab = "Hazard h(t)",
-    main = "Simulated Hazard Function"
-  )
-```

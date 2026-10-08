@@ -1,0 +1,78 @@
+---
+title: "Untitled"
+format: html
+editor: 
+  render-on-save: true
+---
+
+Computing matrix exponential is an expensive calculation. Thus, where possible,
+the transition probability is derived from submatrices $Q_{sub}$ as follows. In
+all cases, the formula is applied for a 1-year timestep during which the rate of
+transition is constant.
+
+- For observations VV, VX, VM, let $\lambda_0 = \lambda_{01} + \lambda_{02}$,
+  the submatrix is
+  $$
+  Q_{sub} =
+  \begin{pmatrix}
+  -\lambda_0 & \lambda_{01} & \lambda_{02} \\
+  0 & -\lambda_{12} & \lambda_{12} \\
+  0 & 0 & 0
+  \end{pmatrix}
+  $$
+  with the probability of remaining virgin is $P_{00} = e^{-\lambda_0}$. The
+  probability of transitioning to sexual debut is
+  $$
+  P_{01} = \frac{\lambda_{01}}{\lambda_{12}-\lambda_0} \left( e^{-\lambda_0 t} - e^{-\lambda_{12} t} \right), \lambda_0 \neq \lambda_{12}
+  $$
+  or 
+  $P_{01} = \lambda_{01} \cdot t \cdot e^{-\lambda_0 t}, \lambda_0 = \lambda_{12}$,
+  and the probability of transitioning to marriage directly is
+  $P_{02} = 1 - P_{00} - P_{01}$.
+
+- For observations XX, XM, the only exit is to marriage. The submatrix is
+  $$
+  Q_{sub} =
+  \begin{pmatrix}
+  -\lambda_{12} & \lambda_{12} \\
+  0 & 0
+  \end{pmatrix}
+  $$
+  with the probability of remaining unmarried is $P_{11} = e^{-\lambda_{12}}$ 
+  and the probability of getting married is $P_{12} = 1 - P_{11}$.
+
+- For cases of MM, MS, MD, MW who have never remarried, let 
+  $\lambda_2 = \lambda_{23} + \lambda_{24} + \lambda_{25}$, the submatrix is
+  $$
+  Q_{sub} =
+  \begin{pmatrix}
+  -\lambda_2 & \lambda_{23} & \lambda_{24} & \lambda_{25} \\
+  0 & 0 & 0 & 0 \\
+  0 & 0 & 0 & 0 \\
+  0 & 0 & 0 & 0
+  \end{pmatrix}
+  $$
+  in which the probability of remaining in state 2 is $P_{22} = e^{-\lambda_2 t}$.
+  The probability of transitioning from state 2 to state $j = 3, 4, 5$ is
+  $$
+  P_{2j} = \frac{\lambda_{2j}}{\lambda_2} \left( 1 - e^{-\lambda_2 t} \right).
+  $$
+- For cases that has already remarried, which started from M and make all the
+  possible path through S, W, D, R, the submatrix is
+  $$
+  Q_{sub} =
+  \begin{pmatrix}
+  -\lambda_2 & \lambda_{23} & \lambda_{24} & \lambda_{25} & 0 \\
+  0 & -\lambda_{36} & 0 & 0 & \lambda_{36} \\
+  0 & 0 & -\lambda_{46} & 0 & \lambda_{46} \\
+  0 & 0 & 0 & -\lambda_{56} & \lambda_{56} \\
+  0 & \lambda_{23} & \lambda_{24} & \lambda_{25} & -\lambda_2
+  \end{pmatrix}
+  $$
+  Because the system has feedback loops making close-form for $P_{2j}$
+  infeasible. In this case, we compute the matrix exponential $P =
+  \text{expm}(\cdot Q_{sub})$ numerically for each 1-year time steps and 
+  propagate the probability. For example, a currently remarried has 
+  $$
+  P_{23} = ([1, 0, 0, 0, 0] \cdot \text{expm}(Q_{sub}))_{0,1}
+  $$
